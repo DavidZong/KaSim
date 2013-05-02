@@ -71,8 +71,8 @@ let empty =
 	num_of_token = StringMap.empty ;
 	fresh_token = 0 ;
 	
-	volume_of_num = IntMap.empty ; 
-	num_of_volume = StringMap.empty ;
+	volume_of_num = IntMap.add 0 "^" IntMap.empty ; 
+	num_of_volume = StringMap.add "^" 0 StringMap.empty ;
 	fresh_volume = 1 ; (*volume 0 is restricted for Top*)
 
 	num_of_pert = StringMap.empty ;

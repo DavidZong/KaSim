@@ -103,7 +103,8 @@ let main =
 						| exn -> (Debug.tag "!Simulation package seems to have been created with a different version of KaSim, aborting..." ; exit 1) 
 		in
 		
-		let top_state = IntMap.find 0 state_map in
+		let top_state = try IntMap.find 0 state_map with Not_found -> failwith "Top volume not initialized"
+		in
 		
 		Parameter.setOutputName() ; (*changin output names if -d option was used*)
 		Parameter.checkFileExists() ;
