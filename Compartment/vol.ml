@@ -3,7 +3,7 @@ open Mods
 
 (**Volume management*)
 
-class virtual compartment id volume state counter causal plot env =
+class virtual compartment id volume state counter causal plot =
 	object (self)
 	val mutable id:int = id
 	val mutable volume:float = volume
@@ -11,7 +11,6 @@ class virtual compartment id volume state counter causal plot env =
 	val mutable counter:Counter.t = counter
 	val mutable causal:(Compression_main.D.S.PH.B.PB.CI.Po.K.P.log_info * Compression_main.D.S.PH.B.PB.CI.Po.K.step list) = causal
 	val mutable plot:Plot.t = plot
-	val mutable env:Environment.t = env  
 	
 	method get_local_clock = counter.Counter.time 
 	method set_local_clock = fun t -> (counter.Counter.time <- t)
@@ -21,14 +20,14 @@ class virtual compartment id volume state counter causal plot env =
 
 end
 		
-class virtual passive id volume state counter causal plot env =
-	object inherit compartment id volume state counter causal plot env
+class virtual passive id volume state counter causal plot =
+	object inherit compartment id volume state counter causal plot
 end
 	
-class virtual active id volume state counter causal plot env =
-	object inherit compartment id volume state counter causal plot env
+class virtual active id volume state counter causal plot =
+	object inherit compartment id volume state counter causal plot
 	
-	method private run t_max =
+	method run t_max env =
 		let (story_profiling,event_list) = causal in
 		counter <- {counter with Counter.max_time = Some t_max} ;
   	try

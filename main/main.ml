@@ -85,7 +85,7 @@ let main =
 		
 		let counter =	Counter.create 0.0 0 !Parameter.maxTimeValue !Parameter.maxEventValue in
 		
-		let (env, state) = 
+		let (env, state_map) = 
 			match !Parameter.marshalizedInFile with
 				| "" -> Eval.initialize result counter
 				| marshalized_file ->
@@ -94,14 +94,16 @@ let main =
 						begin
 							if !Parameter.inputKappaFileNames <> [] then Printf.printf "+ Loading simulation package %s (kappa files are ignored)...\n" marshalized_file 
 							else Printf.printf "+Loading simulation package %s...\n" marshalized_file ;
-							let env,state = (Marshal.from_channel d : Environment.t * State.implicit_state) in
+							let env,state_map = (Marshal.from_channel d : Environment.t * (State.implicit_state IntMap.t)) in
 							Pervasives.close_in d ;
 							Printf.printf "Done\n" ;
-							(env,state) 
+							(env,state_map) 
 						end
 					with
 						| exn -> (Debug.tag "!Simulation package seems to have been created with a different version of KaSim, aborting..." ; exit 1) 
 		in
+		
+		let top_state = IntMap.find 0 state_map in
 		
 		Parameter.setOutputName() ; (*changin output names if -d option was used*)
 		Parameter.checkFileExists() ;
@@ -112,17 +114,17 @@ let main =
 				| file -> 
 					let d = open_out_bin file in
 					begin
-						Marshal.to_channel d (env,state) [Marshal.Closures] ;
+						Marshal.to_channel d (env,state_map) [Marshal.Closures] ;
 						close_out d
 					end
 		in
 		if !Parameter.influenceFileName <> ""  then 
 			begin
 				let desc = open_out !Parameter.influenceFileName in
-				State.dot_of_influence_map desc state env ; 
+				State.dot_of_influence_map desc top_state env ; (*the state of TOP is always defined and contains all that is needed for computing rules*)
 				close_out desc 
 			end ;  
-		if !Parameter.compileModeOn then (Hashtbl.iter (fun i r -> Dynamics.dump r env) state.State.rules ; exit 0)
+		if !Parameter.compileModeOn then (Hashtbl.iter (fun i r -> Dynamics.dump r env) top_state.State.rules ; exit 0)
 		else () ;
     let profiling = Compression_main.D.S.PH.B.PB.CI.Po.K.P.init_log_info () in 
 		let plot = Plot.create !Parameter.outputDataName
@@ -136,14 +138,19 @@ let main =
 				let grid = Causal.empty_grid() in 
                                 let event_list = [] in 
                                 let profiling,event_list = 
-                                Compression_main.D.S.PH.B.PB.CI.Po.K.store_init profiling state event_list in 
+                                Compression_main.D.S.PH.B.PB.CI.Po.K.store_init profiling top_state event_list in 
                                 grid,profiling,event_list
                         else (Causal.empty_grid(),profiling,[])
 		in
 		ExceptionDefn.flush_warning () ; 
 		Parameter.initSimTime () ; 
+		
+		(*****************************************************************)
+		(*REPLACE HERE BY SPAWNING A SCHEDULER WITH STATE_MAP AS ARGUMENT*)
+		(*****************************************************************)
+		
 		try
-			Run.loop state profiling event_list counter plot env ;
+			Run.loop top_state profiling event_list counter plot env ;
 			print_newline() ;
 			Printf.printf "Simulation ended (eff.: %f, detail below)\n" 
 			((float_of_int (Counter.event counter)) /. (float_of_int (Counter.null_event counter + Counter.event counter))) ;
@@ -160,7 +167,7 @@ let main =
 			if !Parameter.fluxModeOn then 
 				begin
 					let d = open_out !Parameter.fluxFileName in
-					State.dot_of_flux d state env ;
+					State.dot_of_flux d top_state env ;
 					close_out d
 				end 
 			else () ;
@@ -181,8 +188,8 @@ let main =
 							begin 
 								Parameter.dotOutput := false ;
 								let desc = open_out !Parameter.dumpFileName in 
-								State.snapshot state counter desc !Parameter.snapshotHighres env ;
-								Parameter.debugModeOn:=true ; State.dump state counter env ;
+								State.snapshot top_state counter desc !Parameter.snapshotHighres env ;
+								Parameter.debugModeOn:=true ; State.dump top_state counter env ;
 								close_out desc ;
 								Printf.eprintf "Final state dumped (%s)\n" !Parameter.dumpFileName
 							end
@@ -194,7 +201,7 @@ let main =
 				(Printf.printf "?\nA deadlock was reached after %d events and %Es (Activity = %.5f)\n"
 				(Counter.event counter)
 				(Counter.time counter) 
-				(Random_tree.total state.activity_tree))
+				(Random_tree.total top_state.activity_tree))
 	with
 	| ExceptionDefn.Semantics_Error (pos, msg) -> 
 		(close_desc None ; Printf.eprintf "***Error (%s) line %d, char %d: %s***\n" (fn pos) (ln pos) (cn pos) msg)

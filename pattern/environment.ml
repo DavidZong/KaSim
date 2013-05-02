@@ -94,17 +94,17 @@ let empty =
 let volume_of_num id env = IntMap.find id env.volume_of_num 
 let num_of_volume str env = StringMap.find str env.num_of_volume 
 
-let declare_volume (lab,pos) env =  
+let declare_volume lab pos env =  
 	let opt = try Some (num_of_volume lab env) with Not_found -> None in
 		match opt with
-			| Some i -> (ExceptionDefn.warning ~with_pos:pos ("Volume '"^lab^"' is defined twice, ignoring additional occurence") ; (env,i)) 
+			| Some i -> (ExceptionDefn.warning ~with_pos:pos ("Volume '"^lab^"' is defined twice, ignoring additional occurence") ; env) 
 			| None ->
 				let i,env = (env.fresh_volume,{env with fresh_volume = env.fresh_volume+1})
 				in 
-					({env with
+					{env with
 						volume_of_num = IntMap.add i lab env.volume_of_num ;
 						num_of_volume = StringMap.add lab i env.num_of_volume
-					},i)
+					}
 
 
 let get_desc file env = 

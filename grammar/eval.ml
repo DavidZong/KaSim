@@ -519,6 +519,11 @@ let token_of_ast abs_tk env =
 	let (name, pos) = abs_tk in
 	Environment.declare_token name pos env
 	
+let volume_of_ast abs_vol env =
+	let (name, pos) = abs_vol in
+	Environment.declare_volume name pos env
+	
+	
 let rule_of_ast ?(backwards=false) env (ast_rule_label, ast_rule) tolerate_new_state = 
 	let ast_rule_label,ast_rule = if backwards then Ast.flip (ast_rule_label, ast_rule) else (ast_rule_label, ast_rule) in
 	let (env, lhs_id) =
@@ -755,8 +760,10 @@ let environment_of_result res =
 		)
 		Environment.empty res.Ast.signatures
 	in
-	List.fold_left (fun env (tk, pos) -> token_of_ast (tk,pos) env) env res.Ast.tokens
-
+	let env = 
+		List.fold_left (fun env (tk, pos) -> token_of_ast (tk,pos) env) env res.Ast.tokens
+	in
+	List.fold_left (fun env ((v_name, pos),vol,(param,pos_p)) -> volume_of_ast (v_name,pos) env) env res.Ast.volumes
 
 let obs_of_result env res =
 	List.fold_left
@@ -1062,13 +1069,25 @@ let pert_of_result variables env res =
 		(variables, lpert, (List.rev lrules), env)
 
 let init_graph_of_result env res =
-	let n = env.Environment.fresh_token in 
-	let token_vector = Array.init n (fun i -> 0.) in
-	let sg,env = 
+	let n_token = env.Environment.fresh_token in
+	let get_content opt_vol sg_map = 
+		let vol_id = 
+			match opt_vol with
+				| None -> 0 (*Top volume*)
+				| Some (vol_nme,pos) ->
+					try Environment.num_of_volume vol_nme env with Not_found -> raise (ExceptionDefn.Semantics_Error (pos, Printf.sprintf "Volume '%s' is not declared" vol_nme))
+		in
+		try 
+			let sg,tk = IntMap.find vol_id sg_map in (sg,tk,vol_id) 
+		with Not_found -> (Graph.SiteGraph.init !Parameter.defaultGraphSize, Array.init n_token (fun i -> 0.),vol_id)
+	in
+					
+	let sg_map,env = 
 	List.fold_left
-		(fun (sg,env) (opt_vol,init_t,pos) -> (*TODO dealing with volumes*)
+		(fun (sg_map,env) (opt_vol,init_t,pos) -> (*TODO dealing with volumes*)
+			let sg,tk_vector,vol_id = get_content opt_vol sg_map in
 			match init_t with
-				| INIT_MIX (alg, ast) ->
+				| INIT_MIX (alg, ast) -> 
 					begin
       			let cpt = ref 0
       			and sg = ref sg
@@ -1092,7 +1111,7 @@ let init_graph_of_result env res =
       					sg := Graph.SiteGraph.add_nodes !sg nodes;
       					cpt := !cpt + 1 
       				done;
-      				(!sg,!env)
+      				(IntMap.add vol_id (!sg,tk_vector) sg_map,!env)
 					end
 				| INIT_TOK (alg, (tk_nme,pos_tk)) ->
 					let (v, is_const, opt_v, _, lbl) = partial_eval_alg env alg
@@ -1106,11 +1125,11 @@ let init_graph_of_result env res =
     			in
     			let tok_id = try Environment.num_of_token tk_nme env with Not_found -> raise (ExceptionDefn.Semantics_Error (pos_tk, Printf.sprintf "token %s is undeclared" tk_nme))
 					in
-					token_vector.(tok_id) <- x ;
-					(sg,env)
-		)	(Graph.SiteGraph.init !Parameter.defaultGraphSize,env) res.Ast.init
+					tk_vector.(tok_id) <- x ;
+					(IntMap.add vol_id (sg,tk_vector) sg_map,env)
+		)	(IntMap.empty,env) res.Ast.init
 	in
-	(sg,token_vector,env)
+	(sg_map,env)
 	
 let configurations_of_result result =
 	let set_value pos_p param value_list f ass = 
@@ -1220,7 +1239,7 @@ let initialize result counter =
 	let (env, kappa_vars, alg_vars) = variables_of_result env result in
 	
 	Debug.tag "\t -initial conditions";
-	let sg,token_vector,env = init_graph_of_result env result
+	let sg_token_map,env = init_graph_of_result env result
 	in
 	
 	let tolerate_new_state = !Parameter.implicitSignature in
@@ -1237,17 +1256,25 @@ let initialize result counter =
 	Debug.tag "\t Done";
 	Debug.tag "+ Analyzing non local patterns..." ;
 	let env = Environment.init_roots_of_nl_rules env in
+	
 	Debug.tag "+ Building initial simulation state...";
-	Debug.tag "\t -Counting initial local patterns..." ;
-	let (state, env) =
-	State.initialize sg token_vector rules kappa_vars alg_vars observables (pert,rule_pert) counter env
+	
+	let state_map,env = (**TODO: not copy perturbations, rules and variables if the volume is a either a sink or passive*)
+		IntMap.fold 
+		(fun vol_id (sg,token_vector) (state_map,env) ->
+    	Debug.tag ("\t -Counting initial local patterns in volume '"^(Environment.volume_of_num vol_id env)^"'...") ;
+    	let (state, env) =
+    	State.initialize sg token_vector rules kappa_vars alg_vars observables (pert,rule_pert) counter env (*each state attached to vol_id has its own copy of the rules and variables*)
+    	in
+    	let state =  
+    		if env.Environment.has_intra then
+    			begin
+    				Debug.tag ("\t -Counting initial non local patterns in volume '"^(Environment.volume_of_num vol_id env)^"'...") ;
+    				NonLocal.initialize_embeddings state counter env
+    			end
+    		else state
+			in
+			(IntMap.add vol_id state state_map,env)
+		) sg_token_map (IntMap.empty,env)
 	in
-	let state =  
-		if env.Environment.has_intra then
-			begin
-				Debug.tag "\t -Counting initial non local patterns..." ;
-				NonLocal.initialize_embeddings state counter env
-			end
-		else state
-	in
-	(Debug.tag "\t Done"; (env, state))
+	(Debug.tag "\t Done"; (env, state_map))

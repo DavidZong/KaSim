@@ -27,10 +27,9 @@
 %obs: 'n_b' 'n_a'
 %var: 'n_c' 10000
 
-
+%volume: V {1.0}
 
 #### Initial conditions 
-%init: 'n_a' A()
+%init: V {'n_a' A()}
 %init: 'n_b' B()
 %init: 'n_c' C()
-
