@@ -324,12 +324,16 @@ diffusion_option:
 ;
 
 diffusion:
-| volume_id CAR volume_id {($1,$3)}
+| volume_id CAR fresh_volume_id {($1,$3)}
 ;
 
 volume_id:
 | /*empty*/ { (("^",Tools.no_pos),false) }
 | ID {($1,false)}
+;
+
+fresh_volume_id:
+| volume_id {$1}
 | ID ID {match $1 with ("new",_) -> ($2,true) | (s,pos) -> raise (ExceptionDefn.Syntax_Error (Some pos, "I was expecting keyword 'new' instead of '"^s^"'"))}
 ;
 

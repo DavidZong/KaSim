@@ -23,7 +23,6 @@ else
 	RESULT = KaSim
 endif
 
-	
 ## generate type information (.annot files)
 ANNOTATE = no
 
@@ -31,23 +30,19 @@ ANNOTATE = no
 all: native-code
 debug: debug-code
 
-##if ocamlopt.opt is not in your path, 
-##uncomment the line below and set value below according to the location of your ocaml compilers 
-##(usually /usr/bin/ under linux and /sw/bin under MAC OS X)
+PREFIX? = 
 
-#OCAMLBINPATH = /usr/bin/
-
-ifeq ($(wildcard $(OCAMLBINPATH)menhir),) 
-    OCAMLYACC = $(OCAMLBINPATH)ocamlyacc
+ifeq ($(wildcard $(PREFIX)/menhir),) 
+    OCAMLYACC = $(PREFIX)/ocamlyacc ;
 else 
-    OCAMLYACC = $(OCAMLBINPATH)menhir
+    OCAMLYACC = $(PREFIX)/menhir
 endif
 
-OCAMLCP = $(OCAMLBINPATH)ocamlcp
-OCAMLLEX = $(OCAMLBINPATH)ocamllex
-OCAMLC = $(OCAMLBINPATH)ocamlc.opt 
-OCAMLOPT = $(OCAMLBINPATH)ocamlopt.opt #-g -ccopt -g -ccopt -pg
-OCAMLDEP = $(OCAMLBINPATH)ocamldep
+OCAMLCP = $(PREFIX)/ocamlcp
+OCAMLLEX = $(PREFIX)/ocamllex
+OCAMLC = $(PREFIX)/ocamlc.opt 
+OCAMLOPT = $(PREFIX)/ocamlopt.opt #-g -ccopt -g -ccopt -pg
+OCAMLDEP = $(PREFIX)/ocamldep
 CC = gcc
 
 include OCamlMakefile

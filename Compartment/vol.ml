@@ -3,7 +3,7 @@ open Mods
 
 (**Volume management*)
 
-type event = Out of (float * Node.t * int) list | Tau of float 
+type event = Out of (float * Node.t * int) list | Tau of float | Null
 
 class virtual compartment id volume state counter causal plot =
 	object (self)
