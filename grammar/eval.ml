@@ -520,8 +520,15 @@ let token_of_ast abs_tk env =
 	Environment.declare_token name pos env
 	
 let volume_of_ast abs_vol env =
-	let (name, pos) = abs_vol in
-	Environment.declare_volume name pos env
+	let ((name, pos),vol_siz,(param,pos_p)) = abs_vol in
+	let p =
+		match param with
+			| "active" -> 0
+			| "passive" -> 1
+			| "sink" -> 2
+			| _ as s -> raise (ExceptionDefn.Syntax_Error ((Some pos_p),Printf.sprintf "Volume control '%s' is undefined" s))
+	in
+	Environment.declare_volume name pos vol_siz p env
 	
 	
 let rule_of_ast ?(backwards=false) env (ast_rule_label, ast_rule) tolerate_new_state = 
@@ -710,7 +717,8 @@ let rule_of_ast ?(backwards=false) env (ast_rule_label, ast_rule) tolerate_new_s
 			Dynamics.modif_sites = modif_sites ;
 			Dynamics.is_pert = false ;
 			Dynamics.pre_causal = pre_causal ;
-			Dynamics.cc_impact = Some (connect_impact,disconnect_impact,side_eff_impact)  
+			Dynamics.cc_impact = Some (connect_impact,disconnect_impact,side_eff_impact) ;
+			Dynamics.renorm = None
 		})
 
 let variables_of_result env res =
@@ -763,7 +771,7 @@ let environment_of_result res =
 	let env = 
 		List.fold_left (fun env (tk, pos) -> token_of_ast (tk,pos) env) env res.Ast.tokens
 	in
-	List.fold_left (fun env ((v_name, pos),vol,(param,pos_p)) -> volume_of_ast (v_name,pos) env) env res.Ast.volumes
+	List.fold_left (fun env volume_dec -> volume_of_ast volume_dec env) env res.Ast.volumes
 
 let obs_of_result env res =
 	List.fold_left
@@ -968,7 +976,8 @@ let pert_of_result variables env res =
 									Dynamics.modif_sites = modif_sites ;
 									Dynamics.is_pert = true ;
 									Dynamics.pre_causal = pre_causal ;
-									Dynamics.cc_impact = None 
+									Dynamics.cc_impact = None ;
+									Dynamics.renorm = None
 								}
 								in
 								(env,(Some rule,effect)::rule_list)
@@ -1010,6 +1019,7 @@ let pert_of_result variables env res =
 									Dynamics.pre_causal = pre_causal ;
 									Dynamics.is_pert = true ;
 									Dynamics.cc_impact = None ;
+									Dynamics.renorm = None
 								}
 								in
 								(env,(Some rule,effect)::rule_list)
@@ -1074,7 +1084,7 @@ let init_graph_of_result env res =
 		let vol_id = 
 			match opt_vol with
 				| None -> 0 (*Top volume*)
-				| Some (vol_nme,pos) ->
+				| Some (vol_nme,pos) -> 
 					try Environment.num_of_volume vol_nme env with Not_found -> raise (ExceptionDefn.Semantics_Error (pos, Printf.sprintf "Volume '%s' is not declared" vol_nme))
 		in
 		try 
@@ -1129,6 +1139,10 @@ let init_graph_of_result env res =
 					(IntMap.add vol_id (sg,tk_vector) sg_map,env)
 		)	(IntMap.empty,env) res.Ast.init
 	in
+	(*Creating scheduler for active volumes*)
+	(*let sched = Scheduler.
+	List.iter
+	() res.Ast.volumes*)  
 	(sg_map,env)
 	
 let configurations_of_result result =
@@ -1259,22 +1273,36 @@ let initialize result counter =
 	
 	Debug.tag "+ Building initial simulation state...";
 	
-	let state_map,env = (**TODO: not copy perturbations, rules and variables if the volume is a either a sink or passive*)
-		IntMap.fold 
-		(fun vol_id (sg,token_vector) (state_map,env) ->
-    	Debug.tag ("\t -Counting initial local patterns in volume '"^(Environment.volume_of_num vol_id env)^"'...") ;
-    	let (state, env) =
-    	State.initialize sg token_vector rules kappa_vars alg_vars observables (pert,rule_pert) counter env (*each state attached to vol_id has its own copy of the rules and variables*)
-    	in
-    	let state =  
-    		if env.Environment.has_intra then
-    			begin
-    				Debug.tag ("\t -Counting initial non local patterns in volume '"^(Environment.volume_of_num vol_id env)^"'...") ;
-    				NonLocal.initialize_embeddings state counter env
-    			end
-    		else state
-			in
-			(IntMap.add vol_id state state_map,env)
-		) sg_token_map (IntMap.empty,env)
+	let vol_id = ref 0
+	and ptr_state_map = ref IntMap.empty
+	and ptr_env = ref env
 	in
-	(Debug.tag "\t Done"; (env, state_map))
+	
+	while !vol_id < env.Environment.fresh_volume do
+		let opt = try Some (IntMap.find !vol_id sg_token_map) with Not_found -> None in
+		let sg,token_vector = match opt with Some (sg,tk) -> (sg,tk) | None -> (Graph.SiteGraph.init 0,[||])
+		in
+		begin
+		Debug.tag ("\t -Counting initial local patterns in volume '"^(Environment.volume_of_num !vol_id !ptr_env)^"'...") ;
+		let volume_control = Environment.control_of_volume !vol_id !ptr_env in
+		let (state, new_env) =
+			if volume_control > 0 then (*if control is either passive or sink*)
+				State.initialize sg token_vector [] kappa_vars alg_vars observables ([],[]) counter !ptr_env
+			else
+				let rules = Dynamics.renormalize rules (Environment.size_of_volume !vol_id !ptr_env) env in (*Dividing kinetic rate of binary rules by the volume size*)
+				State.initialize sg token_vector rules kappa_vars alg_vars observables (pert,rule_pert) counter !ptr_env 
+	in
+		ptr_env := new_env ;
+	let state =  
+		if !ptr_env.Environment.has_intra then
+			begin
+				Debug.tag ("\t -Counting initial non local patterns in volume '"^(Environment.volume_of_num !vol_id !ptr_env)^"'...") ;
+				NonLocal.initialize_embeddings state counter !ptr_env
+			end
+		else state
+		in
+		ptr_state_map := IntMap.add !vol_id state !ptr_state_map ;
+		vol_id := !vol_id+1 
+		end
+	done ;
+	(Debug.tag "\t Done"; (!ptr_env, !ptr_state_map))
