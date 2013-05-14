@@ -3,7 +3,9 @@ open Mods
 
 (**Volume management*)
 
-class virtual compartment id volume state counter causal plot env =
+type event = Out of (float * Node.t * int) list | Tau of float 
+
+class virtual compartment id volume state counter causal plot =
 	object (self)
 	val mutable id:int = id
 	val mutable volume:float = volume
@@ -11,24 +13,30 @@ class virtual compartment id volume state counter causal plot env =
 	val mutable counter:Counter.t = counter
 	val mutable causal:(Compression_main.D.S.PH.B.PB.CI.Po.K.P.log_info * Compression_main.D.S.PH.B.PB.CI.Po.K.step list) = causal
 	val mutable plot:Plot.t = plot
-	val mutable env:Environment.t = env  
 	
 	method get_local_clock = counter.Counter.time 
 	method set_local_clock = fun t -> (counter.Counter.time <- t)
-	
-	method virtual send : unit -> (float * Mixture.t * int) (*(time_stamp,mixture,vol_id)*)
-	method virtual receive : (float * Mixture.t * int) -> unit
+		
+	method virtual next_event : unit -> event  
 
 end
 		
-class virtual passive id volume state counter causal plot env =
-	object inherit compartment id volume state counter causal plot env
+class virtual passive id volume state counter causal plot =
+	object (self) inherit compartment id volume state counter causal plot
 end
 	
-class virtual active id volume state counter causal plot env =
-	object inherit compartment id volume state counter causal plot env
+class virtual active id volume state counter causal plot =
+	object (self) inherit compartment id volume state counter causal plot
 	
-	method private run t_max =
+	val mutable job = false
+	method enable () = job <- true
+	method disable () = job <- false
+	 
+	method spawn t_max env = 
+		if not job then ((*Thread.yield () ; Thread.delay 1.0 ;*) self#spawn t_max env) 
+		else (self#disable () ; self#run t_max env) 
+	
+	method private run t_max env =
 		let (story_profiling,event_list) = causal in
 		counter <- {counter with Counter.max_time = Some t_max} ;
   	try
@@ -49,30 +57,3 @@ class virtual active id volume state counter causal plot env =
 end
 		
 
-(*						
-let run_vol time_step vol env =
-	let time_out = vol.c.Mods.Counter.time +. time_step in
-	let counter = {vol.c with Mods.Counter.max_time = Some (vol.c.Mods.Counter.time +. time_step)}
-	in
-	try
-		begin
-		Run.loop vol.s vol.grid vol.story_profiling vol.event_list counter vol.plot env ;
-		(vol,env)
-  	end
-	with
-		| Invalid_argument msg -> 
-			begin
-				(*if !Parameter.debugModeOn then (Debug.tag "State dumped! (dump.ka)" ; let desc = open_out "dump.ka" in State.snapshot state counter desc env ; close_out desc) ; *)
-			  let s = (* Printexc.get_backtrace() *) "" in Printf.eprintf "\n***Runtime error %s occuring in Volume[%d]***\n%s\n" msg vol.id s ;
-				exit 1
-			end
-		| ExceptionDefn.UserInterrupted f -> 
-			begin
-				flush stdout ; 
-				Printf.eprintf "\n***User interrupted simulation in Volume[%d]***\n%s\n" msg vol.id s ;
-				close_desc (Some env) (*closes all other opened descriptors*) ;
-				exit 0
-			end
-		| ExceptionDefn.Deadlock -> 
-			({vol with c=vol.Mods.Counter.time <- time_out},env)		
-*)

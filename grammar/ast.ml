@@ -61,8 +61,9 @@ type rule = {
 	k_def:alg_expr ; 
 	k_un:alg_expr option ;
 	k_op: alg_expr option ; (*rate for backward rule*)
+	diff_opt: (vol_id * vol_id) option
 	}
-	
+and vol_id = (str_pos * bool) (*(vol_name,is_new)*)  	
 and arrow = RAR of Tools.pos | LRAR of Tools.pos
 type rule_label = {lbl_nme:str_pos option ; lbl_ref:str_pos option}
 
@@ -125,7 +126,7 @@ type compil = {variables : variable list; (*pattern declaration for reusing as v
 							 perturbations : perturbation list ;
 							 configurations : configuration list ;
 							 tokens :  str_pos list ;
-							 volumes : (str_pos * float * str_pos) list
+							 volumes : (str_pos * float * str_pos) list (*vol_type,vol_size,vol_param*)
 							 }
 let result:compil ref = ref {variables=[] ; signatures=[] ; rules=[] ; init = [] ; observables = [] ; perturbations = [] ; configurations = [] ; tokens = []; volumes=[]} 
 let init_compil = fun _ -> result := {variables=[] ; signatures=[] ; rules=[] ; init = [] ; observables = [] ; perturbations = [] ; configurations = [] ; tokens = [] ; volumes=[]}

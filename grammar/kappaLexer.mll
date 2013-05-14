@@ -54,6 +54,7 @@ rule token = parse
     | "<->" {let pos = position lexbuf in KAPPA_LRAR pos}
 		| "->" {let pos = position lexbuf in KAPPA_RAR pos}
 		| "<-" {LAR}
+		| "~>" {CAR}
 		| ":=" {let pos = position lexbuf in ASSIGN pos}
 		| "<>" {let pos = position lexbuf in DIFF pos}
 		| pert as s {let pos = position lexbuf in
@@ -130,7 +131,8 @@ rule token = parse
 								| "obs" -> (OBS pos)
 								| "def" -> (CONFIG pos)
 								| "token" -> (TOKEN pos)
-								| "volume" -> (VOLUME pos)
+								| "vol" -> (VOLUME pos)
+								| "diff" -> (DIFFUSION pos)
 								| _ as s -> return_error None lexbuf ("Instruction \""^s^"\" not recognized")
 					 } 
 		| '!' {let pos = position lexbuf in KAPPA_LNK pos}

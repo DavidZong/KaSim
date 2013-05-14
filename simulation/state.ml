@@ -58,7 +58,6 @@ let connex ?(d_map = IntMap.empty) ?(filter = false) ?start_with set with_full_c
 	in 
 	(is_connex,d_map,component,remaining_roots)
 	
-
 let update_flux state id1 id2 w = 
 	let flux = state.flux in
 	let map = try Hashtbl.find flux id1 with Not_found -> IntMap.empty
@@ -198,13 +197,18 @@ let eval_activity ?using rule state counter env =
 	let mix_id = Mixture.get_id rule.lhs
 	and k_def = rule.k_def
 	in
+	let renormalize opt a =
+		match opt with 
+			| None -> a 
+			| Some x -> Num.mult a (Mods.Num.F (1./.x)) 
+	in
 	let a_2 = (*overestimated activity of binary instances of the rule*)
  		(match k_def with
 			| Dynamics.CONST f -> 
 				let n = (match using with None -> instance_number mix_id state env | Some x -> Num.I x) in 
 				if Num.is_zero n then (Num.I 0)
 				else
-					(Num.mult f n)  (*Issue #65*)
+					(Num.mult f n)  
 			| Dynamics.VAR k_fun ->
 					let act_of_id id = instance_number id state env
 					and v_of_var id = value state id counter env 
@@ -248,7 +252,7 @@ let eval_activity ?using rule state counter env =
 								Num.mult k n 
 				end
 	in
-	(a_2,a_1)
+	(renormalize rule.Dynamics.renorm a_2,a_1)
 
 let pert_of_id state id = IntMap.find id state.perturbations
 

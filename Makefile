@@ -9,7 +9,7 @@ SOURCES = \
 		pattern/signature.ml pattern/environment.ml \
 		siteGraphs/node.ml pattern/mixture.mli  \
 		pattern/mixture.ml pattern/precondition.ml pattern/precondition.mli \
-		siteGraphs/graph.ml siteGraphs/species.ml pattern/matching.ml pattern/dynamics.ml \
+		siteGraphs/graph.ml siteGraphs/species.ml pattern/matching.ml pattern/dynamics.ml compartment/diffusion.ml \
 		simulation/state.ml simulation/nonLocal.ml grammar/eval.ml simulation/external.ml  \
 		cflow/cflow_handler.ml cflow/profiling.ml cflow/causal.ml  \
 		cflow/kappa_instantiation.ml cflow/po_cut.ml cflow/pseudo_inverse.ml cflow/blackboard_generation.ml cflow/blackboard.ml cflow/propagation_heuristics.ml \
@@ -23,11 +23,13 @@ else
 	RESULT = KaSim
 endif
 
+	
 ## generate type information (.annot files)
 ANNOTATE = no
 
 ## make target (see manual) : byte-code, debug-code, native-code, ...
 all: native-code
+debug: debug-code
 
 ##if ocamlopt.opt is not in your path, 
 ##uncomment the line below and set value below according to the location of your ocaml compilers 
@@ -35,9 +37,14 @@ all: native-code
 
 #OCAMLBINPATH = /usr/bin/
 
+ifeq ($(wildcard $(OCAMLBINPATH)menhir),) 
+    OCAMLYACC = $(OCAMLBINPATH)ocamlyacc
+else 
+    OCAMLYACC = $(OCAMLBINPATH)menhir
+endif
+
 OCAMLCP = $(OCAMLBINPATH)ocamlcp
 OCAMLLEX = $(OCAMLBINPATH)ocamllex
-OCAMLYACC = $(OCAMLBINPATH)ocamlyacc
 OCAMLC = $(OCAMLBINPATH)ocamlc.opt 
 OCAMLOPT = $(OCAMLBINPATH)ocamlopt.opt #-g -ccopt -g -ccopt -pg
 OCAMLDEP = $(OCAMLBINPATH)ocamldep

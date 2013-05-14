@@ -13,6 +13,8 @@ type t = {
 	
 	volume_of_num : string IntMap.t ;
 	num_of_volume : int StringMap.t ;
+	control_of_volume : int IntMap.t ;
+	size_of_volume : float IntMap.t ;
 	fresh_volume : int ;		
 	
 	fresh_name : int ;
@@ -58,6 +60,13 @@ let empty =
 	name_of_num = IntMap.empty ;
 	num_of_kappa = StringMap.empty ; 
 	kappa_of_num = IntMap.empty ;
+	
+	control_of_volume = IntMap.add 0 0 IntMap.empty ; (*top volume has always active control*)
+	size_of_volume = IntMap.add 0 1.0 IntMap.empty ; (*Top volume has default size of 1.0 volume unit*)
+	volume_of_num = IntMap.add 0 "^" IntMap.empty ; 
+	num_of_volume = StringMap.add "^" 0 StringMap.empty ;
+	fresh_volume = 1 ; (*volume 0 is restricted for Top*)
+	
 	num_of_rule = StringMap.empty ;
 	num_of_unary_rule = StringMap.empty ;
 	num_of_alg = StringMap.empty ;
@@ -71,10 +80,6 @@ let empty =
 	num_of_token = StringMap.empty ;
 	fresh_token = 0 ;
 	
-	volume_of_num = IntMap.empty ; 
-	num_of_volume = StringMap.empty ;
-	fresh_volume = 1 ; (*volume 0 is restricted for Top*)
-
 	num_of_pert = StringMap.empty ;
 	pert_of_num = IntMap.empty ;
 	(*rule_of_pert = IntMap.empty ;*)
@@ -93,18 +98,24 @@ let empty =
 
 let volume_of_num id env = IntMap.find id env.volume_of_num 
 let num_of_volume str env = StringMap.find str env.num_of_volume 
+let control_of_volume id env = IntMap.find id env.control_of_volume
+let size_of_volume id env = IntMap.find id env.size_of_volume
 
-let declare_volume (lab,pos) env =  
-	let opt = try Some (num_of_volume lab env) with Not_found -> None in
-		match opt with
-			| Some i -> (ExceptionDefn.warning ~with_pos:pos ("Volume '"^lab^"' is defined twice, ignoring additional occurence") ; (env,i)) 
-			| None ->
-				let i,env = (env.fresh_volume,{env with fresh_volume = env.fresh_volume+1})
-				in 
-					({env with
-						volume_of_num = IntMap.add i lab env.volume_of_num ;
-						num_of_volume = StringMap.add lab i env.num_of_volume
-					},i)
+let declare_volume lab pos size p env =  
+	let i,env =
+		if lab="^" then (0,env) 
+		else
+			let opt = try Some (num_of_volume lab env) with Not_found -> None in
+				match opt with
+					| Some i -> (ExceptionDefn.warning ~with_pos:pos ("Volume '"^lab^"' is defined twice, ignoring additional occurence") ; (i,env)) 
+					| None -> (env.fresh_volume,{env with fresh_volume = env.fresh_volume+1})
+	in
+	{env with
+		volume_of_num = IntMap.add i lab env.volume_of_num ;
+		num_of_volume = StringMap.add lab i env.num_of_volume ;
+		control_of_volume = IntMap.add i p env.control_of_volume ;
+		size_of_volume = IntMap.add i size env.size_of_volume
+	}
 
 
 let get_desc file env = 
