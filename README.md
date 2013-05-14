@@ -7,15 +7,11 @@ the latex sources are available in the man/ directory.
 
 ## Installation
 
-To install you need the ocaml native compiler. To check whether you have it, type 
-
-`ocamlopt -version` 
-
 Ocaml native compilers can be downloaded on [INRIA's website](http://caml.inria.fr/). To create kaSim binaries, simply type 
 
-`make`
+`make PREFIX=path_to_ocaml`
 
-This should produce KaSim binaries. You will need your own plotting program (like gnuplot) to visualize curves.
+Where 'path_to_ocaml` is the path to the folder where ocaml compilers are located (typically /usr/local/bin or /opt/local/bin) This should produce KaSim binaries. You will need your own plotting program (like gnuplot) to visualize curves.
 
 ## Usage
 
