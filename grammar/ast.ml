@@ -61,9 +61,10 @@ type rule = {
 	k_def:alg_expr ; 
 	k_un:alg_expr option ;
 	k_op: alg_expr option ; (*rate for backward rule*)
-	diff_opt: (vol_id * vol_id) option
+	diff_opt: (vol_ctxt * vol_ctxt) option
 	}
-and vol_id = (str_pos * bool) (*(vol_name,is_new)*)  	
+and vol_ctxt = vol_expr list
+and vol_expr = str_pos * (Tools.pos option) 
 and arrow = RAR of Tools.pos | LRAR of Tools.pos
 type rule_label = {lbl_nme:str_pos option ; lbl_ref:str_pos option}
 

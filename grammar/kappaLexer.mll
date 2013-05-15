@@ -132,7 +132,6 @@ rule token = parse
 								| "def" -> (CONFIG pos)
 								| "token" -> (TOKEN pos)
 								| "vol" -> (VOLUME pos)
-								| "diff" -> (DIFFUSION pos)
 								| _ as s -> return_error None lexbuf ("Instruction \""^s^"\" not recognized")
 					 } 
 		| '!' {let pos = position lexbuf in KAPPA_LNK pos}

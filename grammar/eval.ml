@@ -698,28 +698,54 @@ let rule_of_ast ?(backwards=false) env (ast_rule_label, ast_rule) tolerate_new_s
 					cc_id := !cc_id+1 ;
 				done ; !ptr_env)
 	in
-	(env,
-		{
-			Dynamics.add_token = add_token ;
-			Dynamics.rm_token = rm_token ;
-			Dynamics.k_def = k_def;
-			Dynamics.k_alt = k_alt;
-			Dynamics.over_sampling = None;
-			Dynamics.script = script;
-			Dynamics.kappa = kappa_lhs ^ ("->" ^ kappa_rhs);
-			Dynamics.balance = balance;
-			Dynamics.refines = ref_id;
-			Dynamics.lhs = lhs;
-			Dynamics.rhs = rhs;
-			Dynamics.r_id = r_id;
-			Dynamics.added = List.fold_left (fun set i -> IntSet.add i set) IntSet.empty added ;
-			(*Dynamics.side_effect = side_effect ; *)
-			Dynamics.modif_sites = modif_sites ;
-			Dynamics.is_pert = false ;
-			Dynamics.pre_causal = pre_causal ;
-			Dynamics.cc_impact = Some (connect_impact,disconnect_impact,side_eff_impact) ;
-			Dynamics.renorm = None
-		})
+	let r = {
+  			Dynamics.add_token = add_token ;
+  			Dynamics.rm_token = rm_token ;
+  			Dynamics.k_def = k_def;
+  			Dynamics.k_alt = k_alt;
+  			Dynamics.over_sampling = None;
+  			Dynamics.script = script;
+  			Dynamics.kappa = kappa_lhs ^ ("->" ^ kappa_rhs);
+  			Dynamics.balance = balance;
+  			Dynamics.refines = ref_id;
+  			Dynamics.lhs = lhs;
+  			Dynamics.rhs = rhs;
+  			Dynamics.r_id = r_id;
+  			Dynamics.added = List.fold_left (fun set i -> IntSet.add i set) IntSet.empty added ;
+  			Dynamics.modif_sites = modif_sites ;
+  			Dynamics.is_pert = false ;
+  			Dynamics.pre_causal = pre_causal ;
+  			Dynamics.cc_impact = Some (connect_impact,disconnect_impact,side_eff_impact) ;
+  			Dynamics.renorm = None
+  		}
+	in
+  	match ast_rule.diff_opt with
+  	| None ->
+    	(env,r,None)
+  	| Some (ast_left,ast_right) ->
+			let diff_lhs,diff_rhs =
+				let compile ast = 
+  				let ar =  Array.make (List.length ast_left) (-1) in
+  				let param_loc = ref (-1) in
+  				List.iteri 
+  				(fun i (label,pos_opt) ->
+  					let str,pos = label in
+  					let vol_id = try Environment.num_of_volume str env with Not_found -> raise (ExceptionDefn.Semantics_Error (pos,"Volume '"^str^"' is not defined"))
+            in
+  					ar.(i) <- vol_id ;
+  					match pos_opt with
+  					| None -> ()
+  					| Some pos -> 
+  						if !param_loc = (-1) then param_loc := i else
+  							raise (ExceptionDefn.Semantics_Error (pos,"Volume context should have exactly one hole"))
+  				) ast_left ;
+  				(ar,!param_loc) 
+				in
+				(compile ast_left,compile ast_right)
+			in
+			let r_diff = Diffusion.compile r (diff_lhs,diff_rhs) env in
+			(env,r,Some r_diff)
+		
 
 let variables_of_result env res =
 	let is_pattern = true
@@ -747,12 +773,12 @@ let rules_of_result env res tolerate_new_state =
 	let (env, l) =
 		List.fold_left
 			(fun (env, cont) (ast_rule_label, ast_rule) ->
-					let (env, r) = rule_of_ast env (ast_rule_label, ast_rule) tolerate_new_state
+					let (env, r, vol_rule_opt) = rule_of_ast env (ast_rule_label, ast_rule) tolerate_new_state
 					in
 					match ast_rule.Ast.k_op with
 						| None -> (env,r::cont)
 						| Some k -> 
-							let (env,back_r) = rule_of_ast ~backwards:true env (ast_rule_label, ast_rule) tolerate_new_state
+							let (env,back_r, vol_rule_opt) = rule_of_ast ~backwards:true env (ast_rule_label, ast_rule) tolerate_new_state
 							in
 							(env,back_r::(r::cont))
 			)

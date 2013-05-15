@@ -5,7 +5,7 @@
 %token AT OP_PAR CL_PAR COMMA DOT TYPE_TOK LAR OP_CUR CL_CUR 
 %token <Tools.pos> LOG PLUS MULT MINUS AND OR GREATER SMALLER EQUAL PERT INTRO DELETE DO SET UNTIL TRUE FALSE OBS KAPPA_RAR TRACK CPUTIME CONFIG REPEAT DIFF
 %token <Tools.pos> KAPPA_WLD KAPPA_SEMI SIGNATURE INFINITY TIME EVENT NULL_EVENT PROD_EVENT INIT LET DIV PLOT SINUS COSINUS TAN SQRT EXPONENT POW ABS MODULO 
-%token <Tools.pos> EMAX TMAX FLUX ASSIGN ASSIGN2 TOKEN KAPPA_LNK PIPE KAPPA_LRAR PRINT PRINTF VOLUME DIFFUSION
+%token <Tools.pos> EMAX TMAX FLUX ASSIGN ASSIGN2 TOKEN KAPPA_LNK PIPE KAPPA_LRAR PRINT PRINTF VOLUME 
 %token <int*Tools.pos> INT 
 %token <string*Tools.pos> ID LABEL KAPPA_MRK  
 %token <float*Tools.pos> FLOAT 
@@ -126,8 +126,8 @@ init_declaration:
 ;
 
 volume_param:
-| OP_CUR FLOAT CL_CUR opt_param {let f,_ = $2 in (f,$4)}
-| OP_CUR INT CL_CUR opt_param {let n,_ = $2 in (float_of_int n,$4)}
+| OP_PAR FLOAT CL_PAR opt_param {let f,_ = $2 in (f,$4)}
+| OP_PAR INT CL_PAR opt_param {let n,_ = $2 in (float_of_int n,$4)}
 ;
 
 opt_param:
@@ -324,18 +324,19 @@ diffusion_option:
 ;
 
 diffusion:
-| volume_id CAR fresh_volume_id {($1,$3)}
+| volume_context CAR volume_context {($1,$3)}
 ;
 
-volume_id:
-| /*empty*/ { (("^",Tools.no_pos),false) }
-| ID {($1,false)}
+volume_context: 
+| volume_expr {[$1]}
+| volume_expr COMMA volume_expr {[$1;$3]} 
 ;
 
-fresh_volume_id:
-| volume_id {$1}
-| ID ID {match $1 with ("new",_) -> ($2,true) | (s,pos) -> raise (ExceptionDefn.Syntax_Error (Some pos, "I was expecting keyword 'new' instead of '"^s^"'"))}
-;
+volume_expr:
+| MULT {(("^",Tools.no_pos),Some $1)} /*top level*/
+| ID OP_CUR MULT CL_CUR {($1,Some $3)}
+| ID {($1,None)}
+ ;
 
 arrow:
 | KAPPA_RAR 
