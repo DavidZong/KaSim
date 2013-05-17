@@ -716,35 +716,45 @@ let rule_of_ast ?(backwards=false) env (ast_rule_label, ast_rule) tolerate_new_s
   			Dynamics.is_pert = false ;
   			Dynamics.pre_causal = pre_causal ;
   			Dynamics.cc_impact = Some (connect_impact,disconnect_impact,side_eff_impact) ;
-  			Dynamics.renorm = None
+  			Dynamics.renorm = None ;
+				Dynamics.diffuse = None
   		}
 	in
   	match ast_rule.diff_opt with
   	| None ->
-    	(env,r,None)
+    	(env,r)
   	| Some (ast_left,ast_right) ->
 			let diff_lhs,diff_rhs =
 				let compile ast = 
   				let ar =  Array.make (List.length ast_left) (-1) in
   				let param_loc = ref (-1) in
+					let last_pos = ref Tools.no_pos
+					in
   				List.iteri 
   				(fun i (label,pos_opt) ->
   					let str,pos = label in
-  					let vol_id = try Environment.num_of_volume str env with Not_found -> raise (ExceptionDefn.Semantics_Error (pos,"Volume '"^str^"' is not defined"))
+						let vol_id = try Environment.num_of_volume str env with Not_found -> raise (ExceptionDefn.Semantics_Error (pos,"Volume '"^str^"' is not defined"))
             in
-  					ar.(i) <- vol_id ;
-  					match pos_opt with
+  					last_pos := pos ;
+						ar.(i) <- vol_id ;
+						match pos_opt with
   					| None -> ()
   					| Some pos -> 
-  						if !param_loc = (-1) then param_loc := i else
-  							raise (ExceptionDefn.Semantics_Error (pos,"Volume context should have exactly one hole"))
-  				) ast_left ;
-  				(ar,!param_loc) 
+  						if !param_loc = (-1) then param_loc := i  
+							else
+  							raise (ExceptionDefn.Semantics_Error (pos,"Diffusion rule cannot have multiple parameters"))
+  				) ast ;
+  				(ar,!param_loc,!last_pos) 
 				in
-				(compile ast_left,compile ast_right)
+				let lhs,param,pos = compile ast_left
+				and rhs,param',pos' = compile ast_right
+				in
+				if param <0 then raise (ExceptionDefn.Semantics_Error (pos,"Diffusion rule should have a parameter on the left")) ;
+				if param' <0 then raise (ExceptionDefn.Semantics_Error (pos',"Diffusion rule should have a parameter on the right")) ;
+				((lhs,param),(rhs,param'))
 			in
-			let r_diff = Diffusion.compile r (diff_lhs,diff_rhs) env in
-			(env,r,Some r_diff)
+			let diff = Diffusion.compile r (diff_lhs,diff_rhs) env in
+			(env,{r with Dynamics.diffuse = Some diff})
 		
 
 let variables_of_result env res =
@@ -773,12 +783,12 @@ let rules_of_result env res tolerate_new_state =
 	let (env, l) =
 		List.fold_left
 			(fun (env, cont) (ast_rule_label, ast_rule) ->
-					let (env, r, vol_rule_opt) = rule_of_ast env (ast_rule_label, ast_rule) tolerate_new_state
+					let (env, r) = rule_of_ast env (ast_rule_label, ast_rule) tolerate_new_state
 					in
 					match ast_rule.Ast.k_op with
 						| None -> (env,r::cont)
 						| Some k -> 
-							let (env,back_r, vol_rule_opt) = rule_of_ast ~backwards:true env (ast_rule_label, ast_rule) tolerate_new_state
+							let (env,back_r) = rule_of_ast ~backwards:true env (ast_rule_label, ast_rule) tolerate_new_state
 							in
 							(env,back_r::(r::cont))
 			)
@@ -1003,7 +1013,8 @@ let pert_of_result variables env res =
 									Dynamics.is_pert = true ;
 									Dynamics.pre_causal = pre_causal ;
 									Dynamics.cc_impact = None ;
-									Dynamics.renorm = None
+									Dynamics.renorm = None ;
+									Dynamics.diffuse = None
 								}
 								in
 								(env,(Some rule,effect)::rule_list)
@@ -1027,7 +1038,7 @@ let pert_of_result variables env res =
 								in 
 								let pre_causal = Dynamics.compute_causal lhs rhs script env in
 								let rule = 
-								{ (*TODO*) Dynamics.rm_token = [] ; Dynamics.add_token = [] ; 
+								{ Dynamics.rm_token = [] ; Dynamics.add_token = [] ; 
 									
 									Dynamics.k_def = Dynamics.CONST (Num.F 0.0);
 									Dynamics.k_alt = None;
@@ -1045,7 +1056,8 @@ let pert_of_result variables env res =
 									Dynamics.pre_causal = pre_causal ;
 									Dynamics.is_pert = true ;
 									Dynamics.cc_impact = None ;
-									Dynamics.renorm = None
+									Dynamics.renorm = None ;
+									Dynamics.diffuse = None 
 								}
 								in
 								(env,(Some rule,effect)::rule_list)
@@ -1313,7 +1325,17 @@ let initialize result counter =
 		let volume_control = Environment.control_of_volume !vol_id !ptr_env in
 		let (state, new_env) =
 			if volume_control > 0 then (*if control is either passive or sink*)
-				State.initialize sg token_vector [] kappa_vars alg_vars observables ([],[]) counter !ptr_env
+				(
+					let diffusion_rules = 
+						List.filter (*leaving only rules which may be applied in the volume (none if sink)*)
+						(fun r -> 
+							match r.diffuse with 
+							| Some df -> let vol_id' = Diffusion.loc_in df in (vol_id' = (!vol_id)) && not (volume_control = 2)
+							| _ -> false
+						) rules 
+					in
+					State.initialize sg token_vector diffusion_rules kappa_vars alg_vars observables ([],[]) counter !ptr_env
+				)
 			else
 				let rules = Dynamics.renormalize rules (Environment.size_of_volume !vol_id !ptr_env) env in (*Dividing kinetic rate of binary rules by the volume size*)
 				State.initialize sg token_vector rules kappa_vars alg_vars observables (pert,rule_pert) counter !ptr_env 

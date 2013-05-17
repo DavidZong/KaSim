@@ -11,8 +11,6 @@ class virtual compartment id volume state counter causal plot =
 	val mutable volume:float = volume
 	val mutable state:State.implicit_state = state
 	val mutable counter:Counter.t = counter
-	val mutable causal:(Compression_main.D.S.PH.B.PB.CI.Po.K.P.log_info * Compression_main.D.S.PH.B.PB.CI.Po.K.step list) = causal
-	val mutable plot:Plot.t = plot
 	
 	method get_local_clock = counter.Counter.time 
 	method set_local_clock = fun t -> (counter.Counter.time <- t)
@@ -23,19 +21,19 @@ end
 		
 class virtual passive id volume state counter causal plot =
 	object (self) inherit compartment id volume state counter causal plot
+	
+	val mutable causal:(Compression_main.D.S.PH.B.PB.CI.Po.K.P.log_info * Compression_main.D.S.PH.B.PB.CI.Po.K.step list) = causal
+	val mutable plot:Plot.t = plot
+	
 end
 	
 class virtual active id volume state counter causal plot =
-	object (self) inherit compartment id volume state counter causal plot
+	object (self) inherit passive id volume state counter causal plot
 	
 	val mutable job = false
 	method enable () = job <- true
 	method disable () = job <- false
-	 
-	method spawn t_max env = 
-		if not job then ((*Thread.yield () ; Thread.delay 1.0 ;*) self#spawn t_max env) 
-		else (self#disable () ; self#run t_max env) 
-	
+	 	
 	method private run t_max env =
 		let (story_profiling,event_list) = causal in
 		counter <- {counter with Counter.max_time = Some t_max} ;

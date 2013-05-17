@@ -83,7 +83,10 @@ instruction:
 | VOLUME ID volume_param 
 	{let vol,param = $3 in Ast.VOLSIG ($2,vol,param)}
 | VOLUME volume_param
-	{let vol,param = $2 in Ast.VOLSIG (("^",Tools.no_pos),vol,param)}
+	{let vol,param = $2 in 
+	let str,pos = param in 
+		if str<>"active" then raise (ExceptionDefn.Semantics_Error (pos,"Top Volume has to be active")) 
+		else Ast.VOLSIG (("^",Tools.no_pos),vol,param)}
 | SIGNATURE error
 	{raise (ExceptionDefn.Syntax_Error (Some $1,"Malformed agent signature, I was expecting something of the form '%agent: A(x,y~u~v,z)'"))}
 	
@@ -122,7 +125,7 @@ init_declaration:
 | multiple non_empty_mixture 
 	{(None,Ast.INIT_MIX ($1,$2))}
 | ID LAR multiple {(None,Ast.INIT_TOK ($3,$1))}
-| ID OP_CUR init_declaration CL_CUR {let _,init = $3 in (Some $1,init)}
+| ID OP_PAR init_declaration CL_PAR {let _,init = $3 in (Some $1,init)}
 ;
 
 volume_param:
@@ -131,7 +134,7 @@ volume_param:
 ;
 
 opt_param:
-| /*empty*/ {("passive",Tools.no_pos)}
+| /*empty*/ {("active",Tools.no_pos)}
 | ID {$1}
 
 
@@ -334,7 +337,7 @@ volume_context:
 
 volume_expr:
 | MULT {(("^",Tools.no_pos),Some $1)} /*top level*/
-| ID OP_CUR MULT CL_CUR {($1,Some $3)}
+| ID OP_PAR MULT CL_PAR {($1,Some $3)}
 | ID {($1,None)}
  ;
 
