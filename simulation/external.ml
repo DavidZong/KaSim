@@ -314,7 +314,9 @@ let apply_effect p_id pert tracked pert_events state counter env =
   	(env,state,IntSet.empty,tracked,pert_events) pert.effect
 	in
 	(env, state, pert_ids,tracked,pert_events)
+	
 					
+let check_stopping_time dt pert_ids state counter env =	(env,IntSet.empty,dt) (*TODO*)			
 
 let try_perturbate tracked state pert_ids pert_events counter env = 
 	

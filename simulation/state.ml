@@ -1329,6 +1329,37 @@ let delete state cause u side_effects pert_ids counter env =
 	)
 	u (env,side_effects,pert_ids)
 
+let deep_extraction state cause u pert_ids counter env =
+	let rec iter pert_ids env todo acc ids_done =
+		match todo with
+		| [] -> acc
+		| u::tl ->
+			let pert_ids,env,todo,ids_done =
+  			Node.fold_status
+  			(fun i (_, lnk) (pert_ids,env,todo,ids_done) ->
+      		let env,pert_ids' = negative_upd state cause (u, i) 2 counter env in
+      		let pert_ids = IntSet.union pert_ids pert_ids' in
+      			(* delete injection pointed by both lnk and int-lifts *)
+      			match lnk with
+      			| Node.FPtr _ -> invalid_arg "State.delete"
+      			| Node.Null -> (pert_ids,env,todo,ids_done)
+      			| Node.Ptr (v, j) -> 
+							let address = Node.get_address v in
+							let todo,ids_done = if IntSet.mem address ids_done then (todo,ids_done) else (v::todo,IntSet.add address ids_done) 
+							in 
+							(pert_ids,env,todo,ids_done)
+      	)
+      	u (pert_ids,env,tl,ids_done)
+			in
+			SiteGraph.remove state.graph (Node.get_address u) ;
+			iter pert_ids env todo (u::acc) ids_done
+	in
+	let address = Node.get_address u in 
+	let ok = try let _ = SiteGraph.node_of_id state.graph address in true with Not_found -> false (*Nodes already extracted*)
+	in
+	if ok then iter pert_ids env [u] [] (IntSet.singleton address)
+	else [] 
+		
 let apply state r embedding_t counter env =
 		
 	let app state embedding fresh_map (id, i) =

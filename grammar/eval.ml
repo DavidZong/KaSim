@@ -1118,22 +1118,25 @@ let pert_of_result variables env res =
 
 let init_graph_of_result env res =
 	let n_token = env.Environment.fresh_token in
-	let get_content opt_vol sg_map = 
-		let vol_id = 
+	let get_content opt_vol sg_map env = 
+		let vol_id,env = 
 			match opt_vol with
-				| None -> 0 (*Top volume*)
+				| None -> (0,env) (*Top volume*)
 				| Some (vol_nme,pos) -> 
-					try Environment.num_of_volume vol_nme env with Not_found -> raise (ExceptionDefn.Semantics_Error (pos, Printf.sprintf "Volume '%s' is not declared" vol_nme))
+					try 
+						let vol_type = Environment.num_of_volume vol_nme env in
+						Environment.new_volume vol_type env
+					with Not_found -> raise (ExceptionDefn.Semantics_Error (pos, Printf.sprintf "Volume '%s' is not declared" vol_nme))
 		in
 		try 
-			let sg,tk = IntMap.find vol_id sg_map in (sg,tk,vol_id) 
-		with Not_found -> (Graph.SiteGraph.init !Parameter.defaultGraphSize, Array.init n_token (fun i -> 0.),vol_id)
+			let sg,tk = IntMap.find vol_id sg_map in (sg,tk,vol_id,env) 
+		with Not_found -> (Graph.SiteGraph.init !Parameter.defaultGraphSize, Array.init n_token (fun i -> 0.),vol_id,env)
 	in
 					
 	let sg_map,env = 
 	List.fold_left
 		(fun (sg_map,env) (opt_vol,init_t,pos) -> (*TODO dealing with volumes*)
-			let sg,tk_vector,vol_id = get_content opt_vol sg_map in
+			let sg,tk_vector,vol_id,env = get_content opt_vol sg_map env in
 			match init_t with
 				| INIT_MIX (alg, ast) -> 
 					begin
@@ -1316,13 +1319,13 @@ let initialize result counter =
 	and ptr_env = ref env
 	in
 	
-	while !vol_id < env.Environment.fresh_volume do
+	while !vol_id < env.Environment.fresh_volume_id do
 		let opt = try Some (IntMap.find !vol_id sg_token_map) with Not_found -> None in
 		let sg,token_vector = match opt with Some (sg,tk) -> (sg,tk) | None -> (Graph.SiteGraph.init 0,[||])
 		in
 		begin
 		Debug.tag ("\t -Counting initial local patterns in volume '"^(Environment.volume_of_num !vol_id !ptr_env)^"'...") ;
-		let volume_control = Environment.control_of_volume !vol_id !ptr_env in
+		let volume_control = Environment.control_of_volume (Environment.num_of_volume_id !vol_id env) !ptr_env in
 		let (state, new_env) =
 			if volume_control > 0 then (*if control is either passive or sink*)
 				(
@@ -1337,7 +1340,7 @@ let initialize result counter =
 					State.initialize sg token_vector diffusion_rules kappa_vars alg_vars observables ([],[]) counter !ptr_env
 				)
 			else
-				let rules = Dynamics.renormalize rules (Environment.size_of_volume !vol_id !ptr_env) env in (*Dividing kinetic rate of binary rules by the volume size*)
+				let rules = Dynamics.renormalize rules (Environment.size_of_volume (Environment.num_of_volume_id !vol_id env) !ptr_env) env in (*Dividing kinetic rate of binary rules by the volume size*)
 				State.initialize sg token_vector rules kappa_vars alg_vars observables (pert,rule_pert) counter !ptr_env 
 	in
 		ptr_env := new_env ;

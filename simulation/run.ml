@@ -3,42 +3,9 @@ open Tools
 open ExceptionDefn
 open Random_tree
 
-let event state (*grid*) story_profiling event_list counter plot env =
-	(*1. Time advance*)
-	let dt,activity = 
-		let rd = Random.float 1.0 
-		and activity = (*Activity.total*) Random_tree.total state.State.activity_tree 
-		in
-		if activity < 0. then invalid_arg "Activity invariant violation" ;
-			let dt = -. (log rd /. activity) in 
-			if dt = infinity or activity <= 0. then
-				let depset = Environment.get_dependencies Mods.TIME env in
-				DepSet.fold
-				(fun dep (dt,activity) ->
-					match dep with
-						| Mods.PERT p_id ->
-							begin
-								let pert_opt = try Some (IntMap.find p_id state.State.perturbations) with Not_found -> None
-								in
-								match pert_opt with
-									| None -> (dt,activity)
-									| Some pert -> 
-										(match Mods.Counter.dT counter with Some dt -> (dt,activity) | None -> (Mods.Counter.last_increment counter,activity)) (*find_dt state pert counter env*) (*recherche dicho. pour connaitre la bonne valeur de t?*)
-							end
-						| _ -> (dt,activity)
-				) depset (infinity,0.)
-			else (dt,activity) 
-	in 
-	if dt = infinity || activity = 0. then 
-		begin
-			if !Parameter.dumpIfDeadlocked then	
-				let desc = if !Parameter.dotOutput then open_out "deadlock.dot" else open_out "deadlock.ka" in
-				State.snapshot state counter desc true env
-			else () ;
-			raise Deadlock
-		end ; 
-	Plot.fill state counter plot env dt ; 
-	Counter.inc_time counter dt ;
+let event dt state (*grid*) story_profiling event_list counter plot env =
+	
+	
 	
 	(*updating activity of rule whose rate depends on time or event number*)
 	(*let env,pert_ids = State.update_dep state Mods.EVENT IntSet.empty counter env in*)
@@ -195,7 +162,8 @@ let event state (*grid*) story_profiling event_list counter plot env =
 		in 
 		counter.Counter.perturbation_events <- cpt ;
 		(state,story_profiling,event_list,env)
- 						
+ 		
+(*									
 let loop state story_profiling event_list counter plot env =
 	(*Before entering the loop*)
 	
@@ -244,4 +212,4 @@ let loop state story_profiling event_list counter plot env =
 		  end
 	in
 	iter state story_profiling event_list counter plot env
-	
+*)	

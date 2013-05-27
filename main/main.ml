@@ -83,11 +83,9 @@ let main =
 					end
 		in
 		
-		let counter =	Counter.create 0.0 0 !Parameter.maxTimeValue !Parameter.maxEventValue in
-		
 		let (env, state_map) = 
 			match !Parameter.marshalizedInFile with
-				| "" -> Eval.initialize result counter
+				| "" -> Eval.initialize result (Counter.create 0.0 0 !Parameter.maxTimeValue !Parameter.maxEventValue)
 				| marshalized_file ->
 					try
 						let d = open_in_bin marshalized_file in 
@@ -103,11 +101,41 @@ let main =
 						| exn -> (Debug.tag "!Simulation package seems to have been created with a different version of KaSim, aborting..." ; exit 1) 
 		in
 		
-		let top_state = try IntMap.find 0 state_map with Not_found -> failwith "Top volume not initialized"
+		Parameter.setOutputName() ; (*changing output names if -d option was used*)
+		Parameter.checkFileExists() ;
+
+		let compartment_map =
+			IntMap.fold 
+			(fun vol_id state comp_map ->
+				let vol_num = Environment.num_of_volume_id vol_id env in
+				let vol_label = Environment.volume_of_num vol_num env in
+				let volume = Environment.size_of_volume vol_num env in
+				let counter = Counter.create 0.0 0 !Parameter.maxTimeValue !Parameter.maxEventValue in
+		    let plot = Plot.create ((!Parameter.outputDataName)^vol_label^(string_of_int vol_id)) in
+		
+				let causal =
+					let profiling = Compression_main.D.S.PH.B.PB.CI.Po.K.P.init_log_info () in 
+					if Environment.tracking_enabled env then
+    				let _ = 
+    					if !Parameter.mazCompression || !Parameter.weakCompression then ()
+    					else (ExceptionDefn.warning "Causal flow compution is required but no compression is specified, will output flows with no compresion"  ; 
+    					Parameter.mazCompression := true)
+    				in  
+            let event_list = [] in 
+            let profiling,event_list = 
+            Compression_main.D.S.PH.B.PB.CI.Po.K.store_init profiling state event_list in 
+            (profiling,event_list)
+          else (profiling,[])
+    		in 
+				let c = new Vol.compartment vol_id volume state counter causal plot
+		    in
+				let n = IntSet.cardinal (Environment.volume_id_of_num vol_num env) in
+				let comp_heap = try IntMap.find vol_num comp_map with Not_found -> Vol.CompHeap.create n in
+				let comp_heap = Vol.CompHeap.alloc c comp_heap in
+				IntMap.add vol_num comp_heap comp_map 
+			) state_map IntMap.empty
 		in
 		
-		Parameter.setOutputName() ; (*changin output names if -d option was used*)
-		Parameter.checkFileExists() ;
 		
 		let (_:unit) = 
 			match !Parameter.marshalizedOutFile with
@@ -119,6 +147,8 @@ let main =
 						close_out d
 					end
 		in
+		
+		let top_state = IntMap.find 0 state_map in
 		if !Parameter.influenceFileName <> ""  then 
 			begin
 				let desc = open_out !Parameter.influenceFileName in
@@ -127,29 +157,14 @@ let main =
 			end ;  
 		if !Parameter.compileModeOn then (Hashtbl.iter (fun i r -> Dynamics.dump r env) top_state.State.rules ; exit 0)
 		else () ;
-    let profiling = Compression_main.D.S.PH.B.PB.CI.Po.K.P.init_log_info () in 
-		let plot = Plot.create !Parameter.outputDataName
-		and grid,profiling,event_list = 
-			if Environment.tracking_enabled env then
-				let _ = 
-					if !Parameter.mazCompression || !Parameter.weakCompression then ()
-					else (ExceptionDefn.warning "Causal flow compution is required but no compression is specified, will output flows with no compresion"  ; 
-					Parameter.mazCompression := true)
-				in  
-				let grid = Causal.empty_grid() in 
-                                let event_list = [] in 
-                                let profiling,event_list = 
-                                Compression_main.D.S.PH.B.PB.CI.Po.K.store_init profiling top_state event_list in 
-                                grid,profiling,event_list
-                        else (Causal.empty_grid(),profiling,[])
-		in
-		ExceptionDefn.flush_warning () ; 
-		Parameter.initSimTime () ; 
+    ExceptionDefn.flush_warning () ; 
+		Parameter.initSimTime () 
 		
 		(*****************************************************************)
 		(*REPLACE HERE BY SPAWNING A SCHEDULER WITH STATE_MAP AS ARGUMENT*)
 		(*****************************************************************)
 		
+		(*
 		try
 			Run.loop top_state profiling event_list counter plot env ;
 			print_newline() ;
@@ -203,6 +218,7 @@ let main =
 				(Counter.event counter)
 				(Counter.time counter) 
 				(Random_tree.total top_state.activity_tree))
+				*)
 	with
 	| ExceptionDefn.Semantics_Error (pos, msg) -> 
 		(close_desc None ; Printf.eprintf "***Error (%s) line %d, char %d: %s***\n" (fn pos) (ln pos) (cn pos) msg)

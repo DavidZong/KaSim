@@ -15,7 +15,10 @@ type t = {
 	num_of_volume : int StringMap.t ;
 	control_of_volume : int IntMap.t ;
 	size_of_volume : float IntMap.t ;
-	fresh_volume : int ;		
+	fresh_volume_type : int ;
+	fresh_volume_id : int ;
+	volume_id_of_num : IntSet.t IntMap.t ;
+	num_of_volume_id : int IntMap.t ;		
 	
 	fresh_name : int ;
 	num_of_name : int StringMap.t ;
@@ -65,7 +68,10 @@ let empty =
 	size_of_volume = IntMap.add 0 1.0 IntMap.empty ; (*Top volume has default size of 1.0 volume unit*)
 	volume_of_num = IntMap.add 0 "^" IntMap.empty ; 
 	num_of_volume = StringMap.add "^" 0 StringMap.empty ;
-	fresh_volume = 1 ; (*volume 0 is restricted for Top*)
+	volume_id_of_num = IntMap.add 0 (IntSet.singleton 0) IntMap.empty ;
+	num_of_volume_id = IntMap.add 0 0 IntMap.empty ;
+	fresh_volume_type = 1 ; (*volume 0 is restricted for Top*)
+	fresh_volume_id = 1 ; (*volume 0 has id 0*)
 	
 	num_of_rule = StringMap.empty ;
 	num_of_unary_rule = StringMap.empty ;
@@ -100,6 +106,8 @@ let volume_of_num id env = IntMap.find id env.volume_of_num
 let num_of_volume str env = StringMap.find str env.num_of_volume 
 let control_of_volume id env = IntMap.find id env.control_of_volume
 let size_of_volume id env = IntMap.find id env.size_of_volume
+let num_of_volume_id id env = IntMap.find id env.num_of_volume_id
+let volume_id_of_num n env = IntMap.find n env.volume_id_of_num
 
 let declare_volume lab pos size p env =  
 	let i,env =
@@ -108,7 +116,7 @@ let declare_volume lab pos size p env =
 			let opt = try Some (num_of_volume lab env) with Not_found -> None in
 				match opt with
 					| Some i -> (ExceptionDefn.warning ~with_pos:pos ("Volume '"^lab^"' is defined twice, ignoring additional occurence") ; (i,env)) 
-					| None -> (env.fresh_volume,{env with fresh_volume = env.fresh_volume+1})
+					| None -> (env.fresh_volume_type,{env with fresh_volume_type = env.fresh_volume_type+1})
 	in
 	{env with
 		volume_of_num = IntMap.add i lab env.volume_of_num ;
@@ -116,6 +124,13 @@ let declare_volume lab pos size p env =
 		control_of_volume = IntMap.add i p env.control_of_volume ;
 		size_of_volume = IntMap.add i size env.size_of_volume
 	}
+
+let new_volume vol_num env =
+	if vol_num = 0 then (0,env)
+	else
+		let id = env.fresh_volume_id in
+		let set = try IntMap.find vol_num env.volume_id_of_num with Not_found -> IntSet.empty in
+		(id,{env with fresh_volume_id = id+1 ; num_of_volume_id = IntMap.add id vol_num env.num_of_volume_id ; volume_id_of_num = IntMap.add vol_num (IntSet.add id set) env.volume_id_of_num})
 
 
 let get_desc file env = 
