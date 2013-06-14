@@ -726,17 +726,17 @@ let rule_of_ast ?(backwards=false) env (ast_rule_label, ast_rule) tolerate_new_s
   	| Some (ast_left,ast_right) ->
 			let diff_lhs,diff_rhs =
 				let compile ast = 
-  				let ar =  Array.make (List.length ast_left) (-1) in
+  				let ar =  Array.make (List.length ast) (-1) in
   				let param_loc = ref (-1) in
 					let last_pos = ref Tools.no_pos
 					in
   				List.iteri 
   				(fun i (label,pos_opt) ->
   					let str,pos = label in
-						let vol_id = try Environment.num_of_volume str env with Not_found -> raise (ExceptionDefn.Semantics_Error (pos,"Volume '"^str^"' is not defined"))
+						let vol_num = try Environment.num_of_volume str env with Not_found -> raise (ExceptionDefn.Semantics_Error (pos,"Volume '"^str^"' is not defined"))
             in
   					last_pos := pos ;
-						ar.(i) <- vol_id ;
+						ar.(i) <- vol_num ;
 						match pos_opt with
   					| None -> ()
   					| Some pos -> 
@@ -1325,22 +1325,24 @@ let initialize result counter =
 		in
 		begin
 		Debug.tag ("\t -Counting initial local patterns in volume '"^(Environment.volume_of_num !vol_id !ptr_env)^"'...") ;
-		let volume_control = Environment.control_of_volume (Environment.num_of_volume_id !vol_id env) !ptr_env in
+		let volume_num = Environment.num_of_volume_id !vol_id env in
+		let volume_control = Environment.control_of_volume volume_num !ptr_env in
 		let (state, new_env) =
-			if volume_control > 0 then (*if control is either passive or sink*)
-				(
-					let diffusion_rules = 
-						List.filter (*leaving only rules which may be applied in the volume (none if sink)*)
-						(fun r -> 
-							match r.diffuse with 
-							| Some df -> let vol_id' = Diffusion.loc_in df in (vol_id' = (!vol_id)) && not (volume_control = 2)
-							| _ -> false
-						) rules 
-					in
-					State.initialize sg token_vector diffusion_rules kappa_vars alg_vars observables ([],[]) counter !ptr_env
-				)
-			else
-				let rules = Dynamics.renormalize rules (Environment.size_of_volume (Environment.num_of_volume_id !vol_id env) !ptr_env) env in (*Dividing kinetic rate of binary rules by the volume size*)
+			let diffusion_rules = 
+				if volume_control > 0 then [] (*If volume is passive*)
+				else 
+					List.filter (*leaving only rules which may be applied in the volume (none if sink)*)
+					(fun r -> 
+						match r.diffuse with 
+						| Some df -> 
+							let vol_num' = Diffusion.loc_in df in 
+							(vol_num' = volume_num) 
+						| _ -> !vol_id=0 (*Rule with no diffusion annotation may occur at toplevel*)
+					) rules 
+			in
+			(*Dividing kinetic rate of binary rules by the volume size*)
+			let rules = Dynamics.renormalize diffusion_rules (Environment.size_of_volume volume_num !ptr_env) env 
+			in 
 				State.initialize sg token_vector rules kappa_vars alg_vars observables (pert,rule_pert) counter !ptr_env 
 	in
 		ptr_env := new_env ;

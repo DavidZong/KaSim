@@ -3,10 +3,8 @@ open Tools
 open ExceptionDefn
 open Random_tree
 
+(*
 let event dt state (*grid*) story_profiling event_list counter plot env =
-	
-	
-	
 	(*updating activity of rule whose rate depends on time or event number*)
 	(*let env,pert_ids = State.update_dep state Mods.EVENT IntSet.empty counter env in*)
 	let env,pert_ids_time = State.update_dep state (-1) Mods.TIME IntSet.empty counter env in
@@ -162,8 +160,9 @@ let event dt state (*grid*) story_profiling event_list counter plot env =
 		in 
 		counter.Counter.perturbation_events <- cpt ;
 		(state,story_profiling,event_list,env)
- 		
-(*									
+*)
+
+(*						
 let loop state story_profiling event_list counter plot env =
 	(*Before entering the loop*)
 	
@@ -212,4 +211,4 @@ let loop state story_profiling event_list counter plot env =
 		  end
 	in
 	iter state story_profiling event_list counter plot env
-*)	
+	*)

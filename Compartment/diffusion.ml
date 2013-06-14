@@ -15,8 +15,8 @@ let compile r ((diff_lhs,param_loc),(diff_rhs,param_loc')) env =
 	let preserved,added,removed = 
 		let p,a,r = (ref IntSet.empty, ref IntSet.empty, ref IntSet.empty) in
   	Array.iteri 
-  	(fun i vol_id -> 
-  		try if diff_rhs.(i) = vol_id then p := IntSet.add i !p else (r := IntSet.add i !r ; a := IntSet.add i !a)
+  	(fun i vol_num -> 
+  		try if diff_rhs.(i) = vol_num then p := IntSet.add i !p else (r := IntSet.add i !r ; a := IntSet.add i !a)
   		with _ -> r := IntSet.add i !r
   	) diff_lhs ;
 		(!p,!a,!r)
@@ -27,5 +27,3 @@ let compile r ((diff_lhs,param_loc),(diff_rhs,param_loc')) env =
 
 let loc_in df = try df.lhs.(df.loc_in) with _ -> failwith ("Diffusion.loc_in: index "^(string_of_int df.loc_in)^" out of bounds.") 
 let loc_out df = try df.rhs.(df.loc_out) with _ -> failwith ("Diffusion.loc_out: index "^(string_of_int df.loc_out)^" out of bounds.") 
-
-let apply_and_extract state r embedding env = failwith "Not Implemented"

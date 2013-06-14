@@ -117,16 +117,13 @@ let check_invariants check_opt state counter env =
 	
 	if check_opt.unary then
 		begin
-			let ar = Array.init (Array.length state.nl_injections) (fun i -> 0) in
-  		Array.iteri
-  		(fun r_id injprod_hp_opt ->
+			let ar = Array.init (Hashtbl.length state.nl_injections) (fun i -> 0) in
+  		Hashtbl.iter
+  		(fun r_id injprod_hp ->
   			(*let _ = try Environment.unary_rule_of_num r_id env with Not_found -> raise (Invariant_violation (Printf.sprintf "Rule %d is not unary" r_id)) 
   			in*)
-  			match injprod_hp_opt with
-  				| None -> ()
-  				| Some injprod_hp -> 
-  					let n = InjProdHeap.size injprod_hp in
-  					ar.(r_id) <- n  
+  			let n = InjProdHeap.size injprod_hp in
+  			ar.(r_id) <- n  
   		) state.nl_injections ;
 			Printf.fprintf stderr "%E " (Counter.time counter) ;
 			Array.iteri (fun _ n -> Printf.fprintf stderr "%d " n ) ar ;

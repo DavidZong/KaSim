@@ -126,7 +126,8 @@ let update_intra_in_components r embedding_info state counter env =
 				else
 					List.fold_left  (*nl_injections : (InjProdHeap.t option) array*)
 					(fun state injprod_map -> 
-						let injprod_hp = match state.nl_injections.(r_id) with
+						let opt = try Some (Hashtbl.find state.nl_injections r_id) with Not_found -> None in
+						let injprod_hp = match opt with
 							| Some hp -> hp
 							| None -> InjProdHeap.create !Parameter.defaultHeapSize 
 						in
@@ -136,7 +137,7 @@ let update_intra_in_components r embedding_info state counter env =
 						in
 						try
 							let injprod_hp = InjProdHeap.alloc ~check:true ip injprod_hp in
-							state.nl_injections.(r_id) <- Some injprod_hp ;
+							Hashtbl.replace state.nl_injections r_id injprod_hp ;
 							update_activity state r.r_id r_id counter env ;
 							state
 						with
@@ -218,7 +219,9 @@ let rec update_rooted_intras new_injs state counter env =
 					if !Parameter.debugModeOn then
 						List.iter (fun injmap -> Debug.tag ("new_intras: "^(string_of_map string_of_int Injection.string_of_coord IntMap.fold injmap))) new_intras ;
 					
-					let injprod_hp = match state.nl_injections.(mix_id) with None -> InjProdHeap.create !Parameter.defaultHeapSize | Some hp -> hp in
+					let injprod_hp = 
+						try Hashtbl.find state.nl_injections mix_id with Not_found -> InjProdHeap.create !Parameter.defaultHeapSize 
+					in
 					let mix = kappa_of_id mix_id state in
 					let injprod_hp = 
 						List.fold_left
@@ -255,7 +258,7 @@ let rec update_rooted_intras new_injs state counter env =
 									injprod_hp 
 						) injprod_hp new_intras
 					in
-					state.nl_injections.(mix_id) <- Some injprod_hp ;
+					Hashtbl.replace state.nl_injections mix_id injprod_hp ;
 					update_activity state (-1) mix_id counter env ;
 					update_rooted_intras tl state counter env
 

@@ -103,7 +103,8 @@ let to_string with_detail (hsh_lnk,fresh) node env =
 						let string_of_lift = 
 							fun inj -> 
 								let (m,c) = Injection.get_coordinate inj in
-								Printf.sprintf "(%s,%s)" (string_of_int m) (string_of_int c)  
+								let a = Injection.get_address inj in
+								Printf.sprintf "(%s,%s,%s)" (string_of_int m) (string_of_int c) (string_of_int a)  
 						in
 							let lift_int = Tools.string_of_set string_of_lift LiftSet.fold lifts_int
 							and lift_lnk = Tools.string_of_set string_of_lift LiftSet.fold lifts_lnk
@@ -275,6 +276,9 @@ let follow (u,i) =
 			match lnk with
 				| Ptr (v,j) -> Some (v,j)
 				| _ -> None
+
+
+
 
 module NodeHeap = MemoryManagement.Make (struct type t = node let allocate node i = node.address <- (Some i) end)
 

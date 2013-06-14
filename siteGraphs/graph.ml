@@ -139,7 +139,7 @@ struct
 		let check_connex,roots = match check_connex with None -> (false,IntSet.empty) | Some set -> (true,set) in
 		
 		try iter check_connex roots [ id ] (IntMap.add id 0 d_map) IntSet.empty false with Is_connex -> (true,IntMap.empty,IntSet.empty,IntSet.empty)
-			
+	
 	
 	let add_lift sg phi port_map env =
 		(IntMap.iter
@@ -157,7 +157,7 @@ struct
 			(fun id node map ->
 						IntMap.add id (Node.marshalize node) map
 			) sg IntMap.empty
-	
+		
 	let to_dot ?(with_heap=false) sg dotfile env =
 		let header = "digraph G{\n\t nodesep=.05;\n\t rankdir=LR;\n\t node [shape=record];\n" in
 		let hp_ls, nodes_ls, bonds_ls =

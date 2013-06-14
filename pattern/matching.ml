@@ -31,7 +31,7 @@ let component ?(check_additional_edges=true) ?(already_done=Int2Set.empty) embed
 				else
 				if Int2Set.mem (a_i,n_j) already_done then raise False (*to avoid adding twice the same embedding*)
 				else
-					let node_j = try SiteGraph.node_of_id sg n_j with Not_found -> invalid_arg "Matching.component: not a valid node address" 
+					let node_j = try SiteGraph.node_of_id sg n_j with Not_found -> invalid_arg ("Matching.component: not a valid node address "^(string_of_int n_j)) 
 					and ag_i = try Mixture.agent_of_id a_i mix with Not_found -> invalid_arg "Matching.component: not a valid agent identifier"
 					in
 						if not (Node.name node_j = Mixture.name ag_i) then raise False

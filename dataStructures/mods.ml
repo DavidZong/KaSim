@@ -349,8 +349,8 @@ module Counter =
 							if emax = 0 then 0 
 							else
 							  let nplus = (event * !Parameter.progressBarSize) / emax in 
-                                                          let nminus = (last_event * !Parameter.progressBarSize) / emax in 
-                                                          nplus-nminus 
+                let nminus = (last_event * !Parameter.progressBarSize) / emax in 
+                nplus-nminus 
 				in
 					let n = ref (max n_t n_e) in
 						if !n>0 then set_tick counter (event,time) ;
