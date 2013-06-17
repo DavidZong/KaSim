@@ -11,7 +11,7 @@ type modif =
 	| Pert of IntSet.t
 	| Inbound of (Node.t list list * Dynamics.rule)  
 	| Nothing 
-type event = {dt:float ; kind : modif}
+type event = {trigger_time:float ; kind : modif}
 
 class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 	object (self)
@@ -32,10 +32,14 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 	val mutable compState:State.implicit_state = new_state
 	val mutable compCounter:Counter.t = new_counter
 	
+	method private synchClock t = 
+		let counter = self#getCounter in
+		counter.Counter.time <- t
+			
 	method getState = compState
 	method private setState s = compState <- s
 	method getCounter = compCounter
-	method private setCounter c = compCounter <- c
+	(*method private setCounter c = compCounter <- c*)
 	
 	val mutable event_buffer:event option =  None
 	method getEvent = event_buffer
@@ -52,49 +56,45 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 		and activity = (*Activity.total*) Random_tree.total compState.State.activity_tree 
 		in
 		let dt = -. (log rd /. activity) in
-		if dt = infinity || activity = 0. then 
-		begin
-			if !Parameter.dumpIfDeadlocked then	
-				let vol_nme = Environment.volume_of_num self#getName env in
-				let desc = 
-					if !Parameter.dotOutput then open_out ("deadlock_"^vol_nme^".dot") 
-					else open_out ("deadlock_"^vol_nme^".ka") 
-				in
-				State.snapshot self#getState self#getCounter desc true env
-			else () ;
-		end ; 
-		
+		let local_clock = Counter.time (self#getCounter) in
 		(*Checking if some perturbations should be applied before dt*)
 		let env,pert_ids_time = State.update_dep self#getState (-1) Mods.TIME IntSet.empty self#getCounter env in
 		let env,pert_ids,dt' = External.check_stopping_time dt pert_ids_time self#getState self#getCounter env in
 		if not (IntSet.is_empty pert_ids) then 
-			event_buffer <- Some {dt=dt' ; kind=Pert pert_ids}
+			self#setBuffer {trigger_time=local_clock +. dt' ; kind=Pert pert_ids}
 		else  
 		
   		(*Precomputing which rule should be applied if compartment is selected*)
   		let opt_instance,upd_state = 
-  			try State.draw_rule self#getState self#getCounter env with Null_event i -> (Counter.stat_null i self#getCounter ; (None,self#getState))
+  			try State.draw_rule self#getState self#getCounter env with 
+				| Null_event i -> (Counter.stat_null i self#getCounter ; (None,self#getState))
+				| _ -> (None,self#getState) (*if no rule is applicable in the compartment*)
   		in
   		self#setState upd_state ; (*State.draw_rule may update activity*)
   		match opt_instance with
-  		| None -> event_buffer <- Some {dt = dt ; kind = Nothing}
+  		| None -> self#setBuffer {trigger_time = local_clock +. dt ; kind = Nothing}
   		| Some (r,embedding) -> 
   			begin
   				match r.Dynamics.diffuse with
-  				| None -> event_buffer <- Some {dt = dt ; kind = Rule (r,embedding)}
+  				| None -> self#setBuffer {trigger_time = local_clock +. dt ; kind = Rule (r,embedding)}
   				| Some diff_rule -> 
-  					let (_,added,_) = diff_rule.Diffusion.script in
-						let create = IntSet.mem diff_rule.Diffusion.loc_out added 
-						in 
-  					let vol_num = try diff_rule.Diffusion.rhs.(diff_rule.Diffusion.loc_out) with _ -> failwith "next_event(): index out of bounds"
-  					in
-  					self#setBuffer {dt=dt; kind = Outbound (r,embedding,vol_num,create) }
+  					if diff_rule.Diffusion.loc_out = diff_rule.Diffusion.loc_in then (*no diffusion occurs*)
+							 self#setBuffer {trigger_time = local_clock +. dt ; kind = Rule (r,embedding)}
+						else
+  						let (_,added,_) = diff_rule.Diffusion.script in
+  						let create = IntSet.mem diff_rule.Diffusion.loc_out added 
+  						in 
+    					let vol_num = 
+  							try diff_rule.Diffusion.rhs.(diff_rule.Diffusion.loc_out) with _ -> failwith "next_event(): index out of bounds"
+    					in
+    					self#setBuffer {trigger_time=local_clock +. dt; kind = Outbound (r,embedding,vol_num,create) }
   			end
 	
 	method getNextEvent env =
 		match event_buffer with
-		| Some e -> e
-		| None -> (self#set_event_buffer env ; self#getNextEvent env)
+		| Some e -> e 
+		| None -> (*buffer is empty*)
+			(self#set_event_buffer env ; self#getNextEvent env)
 	
 	method private channel_out (cause:int) (node_ids:int list) (env:Environment.t) =
 		let rec extract todo components pert_ids env =
@@ -177,9 +177,11 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
       (state,(story_profiling,event_list),env,IntSet.union pert_ids pert_ids',psi)
 		in  
 
-		let inc env dt =
-  		Plot.fill self#getState self#getCounter plot env dt ; (*updating plot*) 
-  		Counter.inc_time self#getCounter dt ; (*incrementing time*)
+		let inc env new_clock =
+			let counter = self#getCounter in
+			let dt = new_clock -. Counter.time counter in
+			counter.Counter.time <- new_clock ;
+  		Plot.fill self#getState counter plot env dt ; (*updating plot*) 
   		Counter.inc_events self#getCounter ; (*incrementing event counter*) 
   		self#emptyBuffer ()  (*emptying buffer*)
 		in
@@ -193,14 +195,14 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 					| Nothing -> (*Buffer contains a null event*)
 						if !Parameter.debugModeOn then
 							Debug.tag (Printf.sprintf "In Volume %s: Null event!" (self#getHumanName env)) ;
-  					(inc env event.dt ; (env,IntSet.empty)) 
+  					(inc env event.trigger_time ; (env,IntSet.empty)) 
   					
     			| Outbound (r,embedding,vol_num,is_new) -> (*Buffer contains a diffusion event*)
     				begin
 							if !Parameter.debugModeOn then
 							Debug.tag (Printf.sprintf "In Volume %s: diffuse after applying %s" (self#getHumanName env) r.Dynamics.kappa) ;
 							
-							inc env event.dt ; 
+							inc env event.trigger_time ; 
     					try
 								if is_new then failwith "Compartment creation is not yet implemented" 
 								else
@@ -225,7 +227,8 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 										cpt := !cpt+1
 									done;
 									let components,pert_ids,env = self#channel_out r.Dynamics.r_id !node_ids env in
-									c_out#setBuffer {dt=0. ; kind=Inbound (components,r)} ;
+									let counter = self#getCounter in
+									c_out#setBuffer {trigger_time=Counter.time counter ; kind=Inbound (components,r)} ;
   								(env,pert_ids) 
   						with
   							| Not_found -> failwith "Vol.react: No compartment of the desired type is present"
@@ -240,7 +243,7 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
   					begin
 							if !Parameter.debugModeOn then
 							Debug.tag (Printf.sprintf "In Volume %s: Applying %s" (self#getHumanName env) r.Dynamics.kappa) ;
-							inc env event.dt ; 
+							inc env event.trigger_time ; 
     					try
 								let state,causal',env,pert_ids,_ = 
 									apply_and_update self#getState r embedding self#getCounter causal env 
@@ -257,7 +260,7 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
     				end
     				
   				| Pert pert_ids -> (*Buffer contains time dependent perturbations*)
-  					((inc env event.dt) ;
+  					((inc env event.trigger_time) ;
 							if !Parameter.debugModeOn then
 								Debug.tag 
 								(Printf.sprintf "In Volume %s: Applying perturbations %s" (self#getHumanName env)
@@ -271,7 +274,7 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 					| Inbound (components,r) ->
 						if !Parameter.debugModeOn then
 							Debug.tag (Printf.sprintf "In Volume %s: Incoming packages!" (self#getHumanName env)) ;
-						inc env event.dt ;
+						inc env event.trigger_time ;
 						let state = self#getState in 
 						let state,new_nodes = (*adding new nodes to sg*)
 							List.fold_left

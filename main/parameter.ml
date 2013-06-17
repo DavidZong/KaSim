@@ -143,6 +143,7 @@ let get_compression_mode () =
     strong_compression=false;
   }
 
+let counter_initialized = ref false
 let get_causal_trace x = x.causal_trace 
 let get_causal_trace_only x = not (x.weak_compression || x.strong_compression)
 let get_weak_compression x = x.weak_compression

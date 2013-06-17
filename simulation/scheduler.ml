@@ -38,8 +38,11 @@ let elect_leader sched =
 	let upd_leader leader_opt (vol_num,vol_id) event = 
 		match leader_opt with
 		| None -> Some (vol_num,vol_id,event)
-		| Some (_,_,event') -> if event.dt < event'.dt then Some (vol_num,vol_id,event) else leader_opt
+		| Some (_,_,event') -> 
+			if event.trigger_time < event'.trigger_time then Some (vol_num,vol_id,event) 
+			else leader_opt
 	in
+	
 	IntSet.fold
 	(fun vol_num leader_opt ->
 		let comp_hp = IntMap.find vol_num sched.compartments in
@@ -59,9 +62,9 @@ let dump sched =
 			CompHeap.iteri
 			(fun vol_id c ->
 				let next_event = c#getEvent in
-				let dt = match next_event with None -> "n.a" | Some e -> string_of_float e.dt in
+				let time = match next_event with None -> "n.a" | Some e -> string_of_float e.trigger_time in
 				Debug.tag (Printf.sprintf 
-				"<VOLUME %s_%d (next event in %s t.u)>" vol_nme vol_id dt
+				"<VOLUME %s_%d (next event will occur at %s t.u)>" vol_nme vol_id time
 				) ;
 				State.dump c#getState c#getCounter env ;
 				Debug.tag "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@" ;
@@ -69,8 +72,7 @@ let dump sched =
 		) sched.compartments
 	
 
-let step sched = 
-	let t_clock = sched.clock.Counter.time in
+let step sched =
 	let e_clock = sched.clock.Counter.events in 
 	let max_time = match sched.clock.Counter.max_time with None -> infinity | Some t -> t
 	in
@@ -78,7 +80,7 @@ let step sched =
   match elect_leader sched with
   	| None -> raise (End_of_sim 1)
   	| Some (vol_num,vol_id,event) ->
-			if t_clock +. event.dt > max_time then (sched.clock.Counter.time <- max_time ; raise (End_of_sim 0)) 
+			if event.trigger_time > max_time then (sched.clock.Counter.time <- max_time ; raise (End_of_sim 0)) 
 			else
 				if Some e_clock = max_event then raise (End_of_sim 0)
 				else
@@ -95,8 +97,8 @@ let step sched =
 					
 					let env = c#react (fun num -> random num sched) sched.environment 
       	  in
-      		sched.clock.Counter.time <- event.dt ; 
-					sched.clock.Counter.events <- sched.clock.Counter.events + 1 ; 
+      		sched.clock.Counter.time <- event.trigger_time ; 
+					Counter.inc_events sched.clock ; 
 					
       		{sched with environment = env }
 		

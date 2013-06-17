@@ -3,7 +3,7 @@ open Mods
 open State
 open Random_tree
 
-let version = "3.3-290513 [UNSTABLE]"
+let version = "4.0-170613"
 
 let usage_msg = "KaSim "^version^": \n"^"Usage is KaSim -i input_file [-e events | -t time] [-p points] [-o output_file]\n"
 let version_msg = "Kappa Simulator: "^version^"\n"
@@ -116,37 +116,35 @@ let main =
 		in
 		
 		let compartment_map =
-			try
-  			IntMap.fold 
-  			(fun vol_id state comp_map ->
-  				let vol_num = Environment.num_of_volume_id vol_id env in
-  				let vol_label = Environment.volume_of_num vol_num env in
-  				let volume = Environment.size_of_volume vol_num env in
-  				let counter = Counter.create 0.0 0 !Parameter.maxTimeValue !Parameter.maxEventValue in
-  		    let plot = Plot.create ((!Parameter.outputDataName)^vol_label^(string_of_int vol_id)) in
-  		
-  				let causal =
-  					let profiling = Compression_main.D.S.PH.B.PB.CI.Po.K.P.init_log_info () in 
-  					if Environment.tracking_enabled env then
-      				let _ = 
-      					if !Parameter.mazCompression || !Parameter.weakCompression then ()
-      					else (ExceptionDefn.warning "Causal flow compution is required but no compression is specified, will output flows with no compresion"  ; 
-      					Parameter.mazCompression := true)
-      				in  
-              let event_list = [] in 
-              let profiling,event_list = 
-              Compression_main.D.S.PH.B.PB.CI.Po.K.store_init profiling state event_list in 
-              (profiling,event_list)
-            else (profiling,[])
-      		in 
-  				let c = new Vol.compartment vol_num volume state counter causal plot
-  		    in
-  				let n = IntSet.cardinal (Environment.volume_id_of_num vol_num env) in
-  				let comp_heap = try IntMap.find vol_num comp_map with Not_found -> Vol.CompHeap.create n in
-  				let comp_heap = Vol.CompHeap.alloc c comp_heap in
-  				IntMap.add vol_num comp_heap comp_map 
-  			) state_map IntMap.empty
-			with _ -> failwith "Cannot initialize compartment map."
+  		IntMap.fold 
+  		(fun vol_id state comp_map ->
+  			let vol_num = Environment.num_of_volume_id vol_id env in
+  			let vol_label = Environment.volume_of_num vol_num env in
+  			let volume = Environment.size_of_volume vol_num env in
+  			let counter = Counter.create 0.0 0 !Parameter.maxTimeValue !Parameter.maxEventValue in
+  	    let plot = Plot.create ((!Parameter.outputDataName)^vol_label^(string_of_int vol_id)) in
+  	
+  			let causal =
+  				let profiling = Compression_main.D.S.PH.B.PB.CI.Po.K.P.init_log_info () in 
+  				if Environment.tracking_enabled env then
+    				let _ = 
+    					if !Parameter.mazCompression || !Parameter.weakCompression then ()
+    					else (ExceptionDefn.warning "Causal flow compution is required but no compression is specified, will output flows with no compresion"  ; 
+    					Parameter.mazCompression := true)
+    				in  
+            let event_list = [] in 
+            let profiling,event_list = 
+            Compression_main.D.S.PH.B.PB.CI.Po.K.store_init profiling state event_list in 
+            (profiling,event_list)
+          else (profiling,[])
+    		in 
+  			let c = new Vol.compartment vol_num volume state counter causal plot
+  	    in
+  			let n = IntSet.cardinal (Environment.volume_id_of_num vol_num env) in
+  			let comp_heap = try IntMap.find vol_num comp_map with Not_found -> Vol.CompHeap.create n in
+  			let comp_heap = Vol.CompHeap.alloc c comp_heap in
+  			IntMap.add vol_num comp_heap comp_map 
+  		) state_map IntMap.empty
 		in
 		
 		let top_state = IntMap.find 0 state_map in
@@ -161,41 +159,44 @@ let main =
     ExceptionDefn.flush_warning () ; 
 		Parameter.initSimTime () ; 
 		
+		
 		let scd = Scheduler.create compartment_map env in
-		try 
-  		while(true) do
-  		let _ = Scheduler.step scd in () ;
-  		done 
-		with
-		| Scheduler.End_of_sim i ->	Debug.tag ("Simulation exited with code "^(string_of_int i))  
 		
-		
-		(*****************************************************************)
-		(*REPLACE HERE BY SPAWNING A SCHEDULER WITH STATE_MAP AS ARGUMENT*)
-		(*****************************************************************)
-		(*
 		try
-			Run.loop top_state profiling event_list counter plot env ;
-			print_newline() ;
-			Printf.printf "Simulation ended (eff.: %f, detail below)\n" 
-			((float_of_int (Counter.event counter)) /. (float_of_int (Counter.null_event counter + Counter.event counter))) ;
-			Array.iteri (fun i n ->
-				match i with
-					| 0 -> (Printf.printf "\tValid embedding but no longer unary when required: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
-					| 1 -> (Printf.printf "\tValid embedding but not binary when required: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
-					| 2 -> (Printf.printf "\tClashing instance: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
-					| 3 -> (Printf.printf "\tLazy negative update: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
-					| 4 -> (Printf.printf "\tLazy negative update of non local instances: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
-					| 5 -> (Printf.printf "\tPerturbation interrupting time advance: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
-					|	_ -> print_string "\tna\n"
-			) counter.Counter.stat_null ;
-			if !Parameter.fluxModeOn then 
-				begin
-					let d = open_out !Parameter.fluxFileName in
-					State.dot_of_flux d top_state env ;
-					close_out d
-				end 
-			else () ;
+  		begin
+    		
+			(try 
+    		while(true) do
+	
+    		let _ = Scheduler.step scd in () ;
+    		done 
+  		with
+  		Scheduler.End_of_sim i ->	Debug.tag ("Simulation terminated with code "^(string_of_int i))  
+  		);
+			
+  		print_newline() ;
+  		
+			let counter = scd.Scheduler.clock in
+  		Printf.printf "Simulation ended (eff.: %f, detail below)\n" 
+  		((float_of_int (Counter.event counter)) /. (float_of_int (Counter.null_event counter + Counter.event counter))) ;
+  		Array.iteri (fun i n ->
+  			match i with
+  				| 0 -> (Printf.printf "\tValid embedding but no longer unary when required: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
+  				| 1 -> (Printf.printf "\tValid embedding but not binary when required: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
+  				| 2 -> (Printf.printf "\tClashing instance: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
+  				| 3 -> (Printf.printf "\tLazy negative update: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
+  				| 4 -> (Printf.printf "\tLazy negative update of non local instances: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
+  				| 5 -> (Printf.printf "\tPerturbation interrupting time advance: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
+  				|	_ -> print_string "\tna\n"
+  		) counter.Counter.stat_null ;
+  		if !Parameter.fluxModeOn then 
+  			begin
+  				let d = open_out !Parameter.fluxFileName in
+  				State.dot_of_flux d top_state env ;
+  				close_out d
+  			end 
+  		else () ;
+			end
 		with
 			| Invalid_argument msg -> 
 				begin
@@ -205,6 +206,7 @@ let main =
 				end
 			| ExceptionDefn.UserInterrupted f -> 
 				begin
+					let counter = scd.Scheduler.clock in
 					flush stdout ; 
 					let msg = f (Counter.time counter) (Counter.event counter) in
 					Printf.eprintf "\n***%s: would you like to record the current state? (y/N)***\n" msg ; flush stderr ;
@@ -214,7 +216,6 @@ let main =
 								Parameter.dotOutput := false ;
 								let desc = open_out !Parameter.dumpFileName in 
 								State.snapshot top_state counter desc !Parameter.snapshotHighres env ;
-								Parameter.debugModeOn:=true ; State.dump top_state counter env ;
 								close_out desc ;
 								Printf.eprintf "Final state dumped (%s)\n" !Parameter.dumpFileName
 							end
@@ -223,11 +224,11 @@ let main =
 					close_desc (Some env) (*closes all other opened descriptors*)
 				end
 			| ExceptionDefn.Deadlock ->
+				let counter = scd.Scheduler.clock in
 				(Printf.printf "?\nA deadlock was reached after %d events and %Es (Activity = %.5f)\n"
 				(Counter.event counter)
 				(Counter.time counter) 
 				(Random_tree.total top_state.activity_tree))
-				*)
 	with
 	| ExceptionDefn.Semantics_Error (pos, msg) -> 
 		(close_desc None ; Printf.eprintf "***Error (%s) line %d, char %d: %s***\n" (fn pos) (ln pos) (cn pos) msg)

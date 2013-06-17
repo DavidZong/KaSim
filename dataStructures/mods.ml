@@ -326,14 +326,14 @@ module Counter =
 								
 		let tick counter time event =
 			let _ = 
-				if not counter.initialized then
+				if not !Parameter.counter_initialized then
 					let c = ref !Parameter.progressBarSize in
 						while !c > 0 do
 							print_string "_" ;
 							c:=!c-1
 						done ;
 						print_newline() ; 
-						counter.initialized <- true ; 
+						Parameter.counter_initialized := true ; 
 			and last_event,last_time = counter.last_tick
 			in
 				let n_t = 
