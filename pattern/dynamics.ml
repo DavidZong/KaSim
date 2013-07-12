@@ -41,14 +41,15 @@ type rule = {
 	add_token : (variable * int) list ;
 	rm_token : (variable * int) list ;
 	renorm : float option ;
-	diffuse : Diffusion.t option
+	diffuse : Diffusion.t option ;
+	location : int option 
 	}
 	(*connect: cc_i(lhs) -> {cc_j(lhs),...} if cc_i and cc_j are connected by rule application*)
 	(*disconnect: cc_i(rhs) -> {cc_j(rhs),...} if cc_i and cc_j are disconnected by rule application*)
 	(*side_effect: ag_i -> {site_j,...} if one should check at runtime the id of the agent connected to (ag_i,site_j) and build its cc after rule application*)
 
 let renormalize rules volume env =
-	List.map (fun r -> let n = float_of_int (Mixture.arity r.lhs) in {r with renorm = Some (2.0 ** n)} ) rules 
+	List.map (fun r -> let n = float_of_int ((Mixture.arity r.lhs) - 1) in {r with renorm = Some (volume ** n)} ) rules 
 
 let _INTERNAL_TESTED = 8
 let _INTERNAL_MODIF = 4

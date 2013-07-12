@@ -85,3 +85,18 @@ let list_of_string str =
 		with Stream.Failure -> (acc::cont)
 	in
 	parse stream "" []
+	
+let new_filename nme suffix = 
+	let file_exists = ref true in
+	let cpt = ref 1 in
+	let tmp_name = ref (nme^suffix) in
+		while !file_exists do
+			if Sys.file_exists !tmp_name then
+				begin
+					tmp_name := nme^"~"^(string_of_int !cpt)^suffix ;
+					cpt := !cpt+1 
+				end
+			else
+				file_exists := false
+		done ;
+		!tmp_name

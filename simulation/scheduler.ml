@@ -7,6 +7,18 @@ type t = {
 	environment:Environment.t ; 
 	clock : Counter.t ; 
 	compartments: Vol.CompHeap.t IntMap.t ;
+	vol_map : (
+						(*rules applicable in the given volume*)
+						Dynamics.rule list *
+						(*observables*)  
+						(((int -> Mods.Num.t) -> (int -> Mods.Num.t) -> float -> int -> int -> float -> (int -> Mods.Num.t) -> Mods.Num.t) * bool * Mods.Num.t option * Mods.DepSet.t * string) list * 
+						(*kappa variables*)
+						Mixture.t list *
+						(*algebraic variables*)
+          	(Dynamics.variable * Mods.DepSet.t * int) list *
+          	(*perturbations and perturbation induced rules*)
+						Dynamics.perturbation list * Dynamics.rule list
+						)	IntMap.t ;
 	reactive_comp : IntSet.t 
 	}
 
@@ -18,7 +30,7 @@ let random num sched =
 	let hp = IntMap.find num sched.compartments in
 	CompHeap.random hp 
 
-let create comp_map env =
+let create comp_map vol_map env =
 	let reactive = 
 		IntMap.fold 
 		(fun vol_num comp_hp set ->
@@ -29,7 +41,8 @@ let create comp_map env =
 	{environment = env ; 
 	clock = Counter.create 0.0 0 !Parameter.maxTimeValue !Parameter.maxEventValue;
 	compartments = comp_map ;
-	reactive_comp = reactive 
+	reactive_comp = reactive ;
+	vol_map = vol_map
 	}
 
 let elect_leader sched =
@@ -95,11 +108,26 @@ let step sched =
       			end ;
       		(*************************************************************************)
 					
-					let env = c#react (fun num -> random num sched) sched.environment 
+					let new_state vol_num counter env =
+						let (rules,observables,kappa_vars,alg_vars,pert,rule_pert) = IntMap.find vol_num sched.vol_map 
+						in
+						State.initialize (Graph.SiteGraph.init 0) [||] rules kappa_vars alg_vars observables (pert,rule_pert) counter env 
+					in
+					let env,new_comp = c#react (fun num -> random num sched) new_state sched.environment 
       	  in
+					let sched = 
+						match new_comp with
+  						Some comp -> 
+								let hp = try IntMap.find comp#getName sched.compartments with Not_found -> Vol.CompHeap.create 1
+  							in
+  							let hp = Vol.CompHeap.alloc comp hp in
+  							if !Parameter.debugModeOn then Debug.tag (Printf.sprintf "New compartment %s was added!" (comp#getHumanName sched.environment)) ;
+  							
+								{sched with compartments = IntMap.add comp#getName hp sched.compartments}
+  						| None -> sched
+					in
       		sched.clock.Counter.time <- event.trigger_time ; 
 					Counter.inc_events sched.clock ; 
-					
       		{sched with environment = env }
 		
 		

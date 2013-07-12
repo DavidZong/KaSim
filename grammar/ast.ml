@@ -61,8 +61,9 @@ type rule = {
 	k_def:alg_expr ; 
 	k_un:alg_expr option ;
 	k_op: alg_expr option ; (*rate for backward rule*)
-	diff_opt: (vol_ctxt * vol_ctxt) option
+	diff_opt: diffusion_param option
 	}
+and diffusion_param = DIFF_RULE of (vol_ctxt * vol_ctxt) | DIFF_LOC of vol_ctxt 
 and vol_ctxt = vol_expr list
 and vol_expr = str_pos * (Tools.pos option) 
 and arrow = RAR of Tools.pos | LRAR of Tools.pos

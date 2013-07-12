@@ -97,7 +97,7 @@ module Make(C:Content) =
 	let next_alloc h = 
 		match h.cemetery with
 			| [] -> None
-			| v::_ -> (h.cemetery <- List.tl h.cemetery ; Some v)
+			| v::tl -> (h.cemetery <- tl ; Some v)
 		
 					
   let find i h = (*may raise Not_found*)

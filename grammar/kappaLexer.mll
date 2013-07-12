@@ -106,8 +106,8 @@ rule token = parse
     | id as str {let pos = position lexbuf in ID(str,pos)}
     | '@' {AT}
     | ',' {COMMA}
-    | '(' {OP_PAR}
-    | ')' {CL_PAR}
+    | '(' {let pos = position lexbuf in OP_PAR pos}
+    | ')' {let pos = position lexbuf in CL_PAR pos}
 		| '{' {OP_CUR}
 		| '}' {CL_CUR}
 		| '|' {let pos = position lexbuf in PIPE pos}

@@ -2,8 +2,8 @@
 %}
 
 %token EOF NEWLINE SEMICOLON CAR
-%token AT OP_PAR CL_PAR COMMA DOT TYPE_TOK LAR OP_CUR CL_CUR 
-%token <Tools.pos> LOG PLUS MULT MINUS AND OR GREATER SMALLER EQUAL PERT INTRO DELETE DO SET UNTIL TRUE FALSE OBS KAPPA_RAR TRACK CPUTIME CONFIG REPEAT DIFF
+%token AT  COMMA DOT TYPE_TOK LAR OP_CUR CL_CUR 
+%token <Tools.pos> OP_PAR CL_PAR LOG PLUS MULT MINUS AND OR GREATER SMALLER EQUAL PERT INTRO DELETE DO SET UNTIL TRUE FALSE OBS KAPPA_RAR TRACK CPUTIME CONFIG REPEAT DIFF
 %token <Tools.pos> KAPPA_WLD KAPPA_SEMI SIGNATURE INFINITY TIME EVENT NULL_EVENT PROD_EVENT INIT LET DIV PLOT SINUS COSINUS TAN SQRT EXPONENT POW ABS MODULO 
 %token <Tools.pos> EMAX TMAX FLUX ASSIGN ASSIGN2 TOKEN KAPPA_LNK PIPE KAPPA_LRAR PRINT PRINTF VOLUME 
 %token <int*Tools.pos> INT 
@@ -327,7 +327,8 @@ diffusion_option:
 ;
 
 diffusion:
-| volume_context CAR volume_context {($1,$3)}
+| volume_context CAR volume_context {Ast.DIFF_RULE ($1,$3)}
+| volume_context {Ast.DIFF_LOC $1}
 ;
 
 volume_context: 
@@ -336,10 +337,21 @@ volume_context:
 ;
 
 volume_expr:
-| MULT {(("^",Tools.no_pos),Some $1)} /*top level*/
-| ID OP_PAR MULT CL_PAR {($1,Some $3)}
-| ID {($1,None)}
- ;
+| vol_nme OP_PAR placeholder_opt CL_PAR {let label,pos = $1 in 
+                                         let pos = if pos=Tools.no_pos then $2 else pos  
+                                         in
+																				 ((label,pos),$3)}	 
+;
+
+vol_nme:
+/*empty*/ {("^",Tools.no_pos)}
+| ID {$1}
+;
+
+placeholder_opt: 
+/*empty*/ {None}	
+| MULT {Some $1}
+;
 
 arrow:
 | KAPPA_RAR 

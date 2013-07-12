@@ -26,7 +26,6 @@ type implicit_state =
 and component_injections = (InjectionHeap.t option) array
 and obs = { label : string; expr : Dynamics.variable }
 
-
 let silence rule_id state = state.silenced <- (IntSet.add rule_id state.silenced)
 			
 let kappa_of_id id state = Hashtbl.find state.kappa_variables id

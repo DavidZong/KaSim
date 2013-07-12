@@ -7,14 +7,14 @@ open Mods
 (**Volume management*)
 type modif = 
 	| Rule of (Dynamics.rule * State.embedding_t) 
-	| Outbound of (Dynamics.rule * State.embedding_t * int * bool) 
+	| Outbound of (Dynamics.rule * State.embedding_t * int * bool * bool) 
 	| Pert of IntSet.t
 	| Inbound of (Node.t list list * Dynamics.rule)  
 	| Nothing 
 type event = {trigger_time:float ; kind : modif}
 
 class compartment vol_num new_volume new_state new_counter new_causal new_plot =
-	object (self)
+	object (self : 'self)
 	val mutable id:int = (-1)
 	val mutable name:int = vol_num
 	
@@ -28,6 +28,9 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 	
 	method private getCausal = causal
 	method private setCausal c = causal <- c
+	method getLocalTime = 
+		let c = self#getCounter in
+		c.Counter.time
 	
 	val mutable compState:State.implicit_state = new_state
 	val mutable compCounter:Counter.t = new_counter
@@ -41,7 +44,7 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 	method getCounter = compCounter
 	(*method private setCounter c = compCounter <- c*)
 	
-	val mutable event_buffer:event option =  None
+	val mutable event_buffer:event option = None
 	method getEvent = event_buffer
 	
 	method setBuffer event = event_buffer <- Some event
@@ -75,19 +78,21 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
   		| None -> self#setBuffer {trigger_time = local_clock +. dt ; kind = Nothing}
   		| Some (r,embedding) -> 
   			begin
-  				match r.Dynamics.diffuse with
-  				| None -> self#setBuffer {trigger_time = local_clock +. dt ; kind = Rule (r,embedding)}
+					match r.Dynamics.diffuse with
+  				| None -> (self#setBuffer {trigger_time = local_clock +. dt ; kind = Rule (r,embedding)})
   				| Some diff_rule -> 
-  					if diff_rule.Diffusion.loc_out = diff_rule.Diffusion.loc_in then (*no diffusion occurs*)
+						if (diff_rule.Diffusion.loc_out = diff_rule.Diffusion.loc_in) && (Diffusion.num_in diff_rule = Diffusion.num_out diff_rule) 
+						then (*no diffusion occurs*)
 							 self#setBuffer {trigger_time = local_clock +. dt ; kind = Rule (r,embedding)}
 						else
-  						let (_,added,_) = diff_rule.Diffusion.script in
-  						let create = IntSet.mem diff_rule.Diffusion.loc_out added 
-  						in 
-    					let vol_num = 
+  						let (preserved,added,removed) = diff_rule.Diffusion.script in
+  						let create = not (IntSet.is_empty added) 
+  						and delete = not (IntSet.is_empty removed)  
+							in
+							let vol_num = 
   							try diff_rule.Diffusion.rhs.(diff_rule.Diffusion.loc_out) with _ -> failwith "next_event(): index out of bounds"
     					in
-    					self#setBuffer {trigger_time=local_clock +. dt; kind = Outbound (r,embedding,vol_num,create) }
+    					self#setBuffer {trigger_time=local_clock +. dt; kind = Outbound (r,embedding,vol_num,create,delete) }
   			end
 	
 	method getNextEvent env =
@@ -111,7 +116,7 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 		in
 		extract node_ids [] IntSet.empty env
 					
-	method react (random:int->compartment) env =
+	method react (random:int-> compartment) (create_state: int -> Mods.Counter.t -> Environment.t -> (State.implicit_state * Environment.t)) env =
 
 		(*May raise Null_event*)
 		let apply_and_update state r embedding counter causal env =
@@ -187,7 +192,7 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 		in
 		
 		(*no time perturbation should be applied since it would have been in the event horizon*)
-		let env,pert_ids =
+		let env,pert_ids,new_comp =
   		match event_buffer with
 			  | None -> failwith "Event buffer is not initialized"	 
     		| Some event ->
@@ -195,48 +200,93 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 					| Nothing -> (*Buffer contains a null event*)
 						if !Parameter.debugModeOn then
 							Debug.tag (Printf.sprintf "In Volume %s: Null event!" (self#getHumanName env)) ;
-  					(inc env event.trigger_time ; (env,IntSet.empty)) 
+  					(inc env event.trigger_time ; (env,IntSet.empty,None)) 
   					
-    			| Outbound (r,embedding,vol_num,is_new) -> (*Buffer contains a diffusion event*)
+    			| Outbound (r,embedding,vol_num,is_new,delete_origin) -> (*Buffer contains a diffusion event*)
     				begin
 							if !Parameter.debugModeOn then
 							Debug.tag (Printf.sprintf "In Volume %s: diffuse after applying %s" (self#getHumanName env) r.Dynamics.kappa) ;
 							
 							inc env event.trigger_time ; 
     					try
-								if is_new then failwith "Compartment creation is not yet implemented" 
-								else
-  							let c_out = random vol_num in
+								
 								let state,causal',env,pert_ids,creation_map = 
 									apply_and_update self#getState r embedding self#getCounter causal env 
 								in 
       					self#setCausal causal' ;
 								self#setState state ;
 								compCounter.Counter.cons_null_events <- 0 ;
-								if (c_out#getName,c_out#getId) = (self#getName,self#getId) then (*diffusion is within the same compartment*) 
-      						(env,pert_ids)
-								else
-									let node_ids = ref (IntMap.fold (fun _ id_graph cont -> id_graph::cont) creation_map []) 
-									and cpt = ref 0 
-									and n = (fun (_,preserved,_) -> preserved) r.Dynamics.balance
-									and phi = State.map_of embedding 
-									in 
-									while !cpt < n do
-										let n_id = try IntMap.find !cpt phi with Not_found -> failwith "Agent has no image by the embedding" in
-										node_ids := n_id::!node_ids ;
-										cpt := !cpt+1
-									done;
-									let components,pert_ids,env = self#channel_out r.Dynamics.r_id !node_ids env in
-									let counter = self#getCounter in
+								
+								let node_ids = ref (IntMap.fold (fun _ id_graph cont -> id_graph::cont) creation_map []) 
+								and cpt = ref 0 
+								and n = (fun (_,preserved,_) -> preserved) r.Dynamics.balance
+								and phi = State.map_of embedding 
+								in 
+								while !cpt < n do
+									let n_id = try IntMap.find !cpt phi with Not_found -> failwith "Agent has no image by the embedding" in
+									node_ids := n_id::!node_ids ;
+									cpt := !cpt+1
+								done;
+								let components,pert_ids,env = self#channel_out r.Dynamics.r_id !node_ids env in
+														
+								
+								let c_out = (*check that c_out is not self!*) 
+									if is_new then
+									begin
+										if !Parameter.debugModeOn then
+											Debug.tag "Creating a new compartment" ;
+										let vol_label = Environment.volume_of_num vol_num env in
+										let plot_name = Tools.new_filename (!Parameter.outputDataName) vol_label in  
+										let new_counter = 
+											Counter.create self#getLocalTime 0 !Parameter.maxTimeValue !Parameter.maxEventValue 
+										and new_plot = Plot.create plot_name 
+										in	
+										let new_state,env = create_state vol_num new_counter env in
+              			let new_causal =
+              				let profiling = Compression_main.D.S.PH.B.PB.CI.Po.K.P.init_log_info () in 
+              				if Environment.tracking_enabled env then
+                				let _ = 
+                					if !Parameter.mazCompression || !Parameter.weakCompression then ()
+                					else (ExceptionDefn.warning "Causal flow compution is required but no compression is specified, will output flows with no compresion"  ; 
+                					Parameter.mazCompression := true)
+                				in  
+                        let event_list = [] in 
+                        let profiling,event_list = 
+                        Compression_main.D.S.PH.B.PB.CI.Po.K.store_init profiling new_state event_list in 
+                        (profiling,event_list)
+                      else (profiling,[])
+                		in
+										new compartment 
+												vol_num 
+												(Environment.size_of_volume vol_num env) 
+												new_state 
+												new_counter 
+												new_causal 
+												new_plot
+									end
+									else
+										try
+  										let c = random vol_num in
+  										if (Oo.id c) = (Oo.id self) then raise Not_found 
+  										else c
+										with Not_found -> raise (Null_event 10)
+								in
+																
+								let counter = self#getCounter in
+								if components = [] then 
+									c_out#setBuffer {trigger_time=infinity ; kind=Nothing} 
+								else	
 									c_out#setBuffer {trigger_time=Counter.time counter ; kind=Inbound (components,r)} ;
-  								(env,pert_ids) 
+								
+								let new_comp = if is_new then Some c_out else None in
+								(env,pert_ids,new_comp) 
   						with
   							| Not_found -> failwith "Vol.react: No compartment of the desired type is present"
 								| Null_event i -> 
 									(Counter.stat_null i self#getCounter ;
 									Counter.inc_null_events self#getCounter ;
 									Counter.inc_consecutive_null_events self#getCounter ;   
-									(env,IntSet.empty))
+									(env,IntSet.empty,None))
     				end
      
     			| Rule (r,embedding) -> (*Buffer contains a internal rule*)
@@ -251,12 +301,12 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
       					self#setCausal causal' ;
 								self#setState state ;
 								compCounter.Counter.cons_null_events <- 0 ;
-      					(env,pert_ids)
+      					(env,pert_ids,None)
       				with Null_event i -> 
 								(Counter.stat_null i self#getCounter ;
 								Counter.inc_null_events self#getCounter ;
 								Counter.inc_consecutive_null_events self#getCounter ;   
-								(env,IntSet.empty))
+								(env,IntSet.empty,None))
     				end
     				
   				| Pert pert_ids -> (*Buffer contains time dependent perturbations*)
@@ -269,7 +319,7 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 							Counter.stat_null 0 self#getCounter ;
 							Counter.inc_null_events self#getCounter ;
 							Counter.inc_consecutive_null_events self#getCounter ;
-							(env,pert_ids))
+							(env,pert_ids,None))
 							
 					| Inbound (components,r) ->
 						if !Parameter.debugModeOn then
@@ -296,7 +346,7 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 						
 						(*NOT EFFICIENT*)
 						
-						(*should filter here mixtures that may increased by adding nodes*)
+						(*should filter here mixtures that may be increased by adding nodes*)
 						let map_mix f mixtures cont = Hashtbl.fold (fun _ mix cont -> f mix cont) mixtures cont in
 						if !Parameter.debugModeOn then
 							Debug.tag (Printf.sprintf "Searching for new embeddings!") ;
@@ -308,7 +358,7 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 						self#setState state ;
 						let pert_ids = IntMap.fold (fun id _ set -> IntSet.add id set) state.State.perturbations IntSet.empty
 						in
-						(env,pert_ids)
+						(env,pert_ids,None)
 		in
 		
 		(*checking if some perturbation(s) should be applied*)
@@ -340,7 +390,7 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
   		in 
 			causal <- (story_profiling,event_list) ;
   		compCounter.Counter.perturbation_events <- cpt ;
-			env
+			(env,new_comp)
 end
 
 module CompHeap = Heap.Make (struct type t = compartment let allocate = fun c id -> c#setId id let get_address = fun c -> c#getId end)

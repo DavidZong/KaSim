@@ -83,7 +83,7 @@ let main =
 					end
 		in
 		
-		let (env, state_map) = 
+		let (env, state_map,vol_map) = 
 			match !Parameter.marshalizedInFile with
 				| "" -> Eval.initialize result (Counter.create 0.0 0 !Parameter.maxTimeValue !Parameter.maxEventValue)
 				| marshalized_file ->
@@ -92,10 +92,18 @@ let main =
 						begin
 							if !Parameter.inputKappaFileNames <> [] then Printf.printf "+ Loading simulation package %s (kappa files are ignored)...\n" marshalized_file 
 							else Printf.printf "+Loading simulation package %s...\n" marshalized_file ;
-							let env,state_map = (Marshal.from_channel d : Environment.t * (State.implicit_state IntMap.t)) in
+							let env,state_map,vol_map = 
+								(Marshal.from_channel d : Environment.t * (State.implicit_state IntMap.t) * 
+								(Dynamics.rule list *
+          			(((int -> Mods.Num.t) -> (int -> Mods.Num.t) -> float -> int -> int -> float -> (int -> Mods.Num.t) -> Mods.Num.t) * bool * Mods.Num.t option * Mods.DepSet.t * string) list * 
+								Mixture.t list *
+          			(Dynamics.variable * Mods.DepSet.t * int) list *
+          			Dynamics.perturbation list * Dynamics.rule list
+								) Mods.IntMap.t) 
+							in
 							Pervasives.close_in d ;
 							Printf.printf "Done\n" ;
-							(env,state_map) 
+							(env,state_map,vol_map) 
 						end
 					with
 						| exn -> (Debug.tag "!Simulation package seems to have been created with a different version of KaSim, aborting..." ; exit 1) 
@@ -110,7 +118,7 @@ let main =
 				| file -> 
 					let d = open_out_bin file in
 					begin
-						Marshal.to_channel d (env,state_map) [Marshal.Closures] ;
+						Marshal.to_channel d (env,state_map,vol_map) [Marshal.Closures] ;
 						close_out d
 					end
 		in
@@ -160,22 +168,21 @@ let main =
 		Parameter.initSimTime () ; 
 		
 		
-		let scd = Scheduler.create compartment_map env in
+		let scd = ref (Scheduler.create compartment_map vol_map env) in
 		
 		try
   		begin
     		
 			(try 
     		while(true) do
-	
-    		let _ = Scheduler.step scd in () ;
+	    		scd := Scheduler.step !scd 
     		done 
   		with
   		Scheduler.End_of_sim i ->	Debug.tag ("Simulation terminated with code "^(string_of_int i))  
   		);
 			
   		print_newline() ;
-  		
+  		let scd = !scd in
 			let counter = scd.Scheduler.clock in
   		Printf.printf "Simulation ended (eff.: %f, detail below)\n" 
   		((float_of_int (Counter.event counter)) /. (float_of_int (Counter.null_event counter + Counter.event counter))) ;
@@ -206,7 +213,7 @@ let main =
 				end
 			| ExceptionDefn.UserInterrupted f -> 
 				begin
-					let counter = scd.Scheduler.clock in
+					let counter = !scd.Scheduler.clock in
 					flush stdout ; 
 					let msg = f (Counter.time counter) (Counter.event counter) in
 					Printf.eprintf "\n***%s: would you like to record the current state? (y/N)***\n" msg ; flush stderr ;
@@ -224,7 +231,7 @@ let main =
 					close_desc (Some env) (*closes all other opened descriptors*)
 				end
 			| ExceptionDefn.Deadlock ->
-				let counter = scd.Scheduler.clock in
+				let counter = !scd.Scheduler.clock in
 				(Printf.printf "?\nA deadlock was reached after %d events and %Es (Activity = %.5f)\n"
 				(Counter.event counter)
 				(Counter.time counter) 

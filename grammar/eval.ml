@@ -717,35 +717,45 @@ let rule_of_ast ?(backwards=false) env (ast_rule_label, ast_rule) tolerate_new_s
   			Dynamics.pre_causal = pre_causal ;
   			Dynamics.cc_impact = Some (connect_impact,disconnect_impact,side_eff_impact) ;
   			Dynamics.renorm = None ;
-				Dynamics.diffuse = None
+				Dynamics.diffuse = None ;
+				Dynamics.location = None
   		}
 	in
+	let compile ast = 
+  	let ar =  Array.make (List.length ast) (-1) in
+  	let param_loc = ref (-1) in
+  	let last_pos = ref Tools.no_pos
+  	in
+  	List.iteri 
+  	(fun i (label,pos_opt) ->
+  		let str,pos = label in
+  		let vol_num = try Environment.num_of_volume str env with Not_found -> raise (ExceptionDefn.Semantics_Error (pos,"Volume '"^str^"' is not defined"))
+      in
+  		last_pos := pos ;
+  		ar.(i) <- vol_num ;
+  		match pos_opt with
+  		| None -> ()
+  		| Some pos -> 
+  			if !param_loc = (-1) then param_loc := i  
+  			else
+  				raise (ExceptionDefn.Semantics_Error (pos,"Diffusion rule cannot have multiple parameters"))
+  	) ast ;
+  	(ar,!param_loc,!last_pos) 
+	in
   	match ast_rule.diff_opt with
-  	| None ->
-    	(env,r)
-  	| Some (ast_left,ast_right) ->
+  	| None ->	(env,r)
+		| Some (Ast.DIFF_LOC ast) ->
+				
+			let diff_expr,param,pos = compile ast
+			in 
+			if param <0 then raise (ExceptionDefn.Semantics_Error (pos,"No place holder for rule's left hand side in location context")) ;
+			if (List.length ast) <> 1 then raise (ExceptionDefn.Semantics_Error (pos,"Invalid location context")) ;	
+			let vol_num = try diff_expr.(param) with _ -> failwith "Eval.rule_of_ast: invalid parameter index"
+			in
+			(env, {r with Dynamics.location = Some vol_num})
+			
+  	| Some (Ast.DIFF_RULE (ast_left,ast_right)) ->
 			let diff_lhs,diff_rhs =
-				let compile ast = 
-  				let ar =  Array.make (List.length ast) (-1) in
-  				let param_loc = ref (-1) in
-					let last_pos = ref Tools.no_pos
-					in
-  				List.iteri 
-  				(fun i (label,pos_opt) ->
-  					let str,pos = label in
-						let vol_num = try Environment.num_of_volume str env with Not_found -> raise (ExceptionDefn.Semantics_Error (pos,"Volume '"^str^"' is not defined"))
-            in
-  					last_pos := pos ;
-						ar.(i) <- vol_num ;
-						match pos_opt with
-  					| None -> ()
-  					| Some pos -> 
-  						if !param_loc = (-1) then param_loc := i  
-							else
-  							raise (ExceptionDefn.Semantics_Error (pos,"Diffusion rule cannot have multiple parameters"))
-  				) ast ;
-  				(ar,!param_loc,!last_pos) 
-				in
 				let lhs,param,pos = compile ast_left
 				and rhs,param',pos' = compile ast_right
 				in
@@ -754,7 +764,8 @@ let rule_of_ast ?(backwards=false) env (ast_rule_label, ast_rule) tolerate_new_s
 				((lhs,param),(rhs,param'))
 			in
 			let diff = Diffusion.compile r (diff_lhs,diff_rhs) env in
-			(env,{r with Dynamics.diffuse = Some diff})
+			let vol_num = Diffusion.num_in diff in
+			(env,{r with Dynamics.diffuse = Some diff ; Dynamics.location = Some vol_num})
 		
 
 let variables_of_result env res =
@@ -1014,7 +1025,8 @@ let pert_of_result variables env res =
 									Dynamics.pre_causal = pre_causal ;
 									Dynamics.cc_impact = None ;
 									Dynamics.renorm = None ;
-									Dynamics.diffuse = None
+									Dynamics.diffuse = None ;
+									Dynamics.location = None
 								}
 								in
 								(env,(Some rule,effect)::rule_list)
@@ -1057,7 +1069,8 @@ let pert_of_result variables env res =
 									Dynamics.is_pert = true ;
 									Dynamics.cc_impact = None ;
 									Dynamics.renorm = None ;
-									Dynamics.diffuse = None 
+									Dynamics.diffuse = None ;
+									Dynamics.location = None
 								}
 								in
 								(env,(Some rule,effect)::rule_list)
@@ -1301,13 +1314,33 @@ let initialize result counter =
 	Parameter.implicitSignature := false ;
 
 	Debug.tag "\t -rules";
-	let (env, rules) = rules_of_result env result tolerate_new_state in
-	
+	let (env, rules) = rules_of_result env result tolerate_new_state in	
 	Debug.tag "\t -observables";
 	let observables = obs_of_result env result in
 	Debug.tag "\t -perturbations" ;
 	let (kappa_vars, pert, rule_pert, env) = pert_of_result kappa_vars env result
 	in
+	let vol_map =
+		IntMap.fold
+		(fun vol_num _ vol_map ->
+			let volume_control = Environment.control_of_volume vol_num env in
+			if volume_control > 0 then 
+				IntMap.add vol_num ([],observables,kappa_vars,alg_vars,[],[]) vol_map (*If volume is passive*)
+			else
+				let filtered_rules = 
+  				List.filter (*leaving only rules which may be applied in the volume (none if sink)*)
+  				(fun r -> 
+  					match r.location with 
+  					| Some vol_num' -> (vol_num' = vol_num) 
+  					| None -> vol_num=0 (*Rule with no diffusion annotation may only occur at toplevel*)
+  				) rules 
+				in
+				let rules = Dynamics.renormalize filtered_rules (Environment.size_of_volume vol_num env) env in
+				IntMap.add vol_num (rules,observables,kappa_vars,alg_vars,pert,rule_pert) vol_map
+		) env.Environment.volume_of_num IntMap.empty
+	in	
+	
+	
 	Debug.tag "\t Done";
 	Debug.tag "+ Analyzing non local patterns..." ;
 	let env = Environment.init_roots_of_nl_rules env in
@@ -1326,36 +1359,29 @@ let initialize result counter =
 		begin
 		Debug.tag ("\t -Counting initial local patterns in volume '"^(Environment.volume_of_num !vol_id !ptr_env)^"'...") ;
 		let volume_num = Environment.num_of_volume_id !vol_id env in
-		let volume_control = Environment.control_of_volume volume_num !ptr_env in
 		let (state, new_env) =
-			let diffusion_rules = 
-				if volume_control > 0 then [] (*If volume is passive*)
-				else 
-					List.filter (*leaving only rules which may be applied in the volume (none if sink)*)
-					(fun r -> 
-						match r.diffuse with 
-						| Some df -> 
-							let vol_num' = Diffusion.loc_in df in 
-							(vol_num' = volume_num) 
-						| _ -> !vol_id=0 (*Rule with no diffusion annotation may occur at toplevel*)
-					) rules 
+			let diffusion_rules =
+				try
+					let diffusion_rules,_,_,_,_,_ = IntMap.find volume_num vol_map 
+					in
+					diffusion_rules
+				with Not_found -> []
 			in
 			(*Dividing kinetic rate of binary rules by the volume size*)
-			let rules = Dynamics.renormalize diffusion_rules (Environment.size_of_volume volume_num !ptr_env) env 
-			in 
-				State.initialize sg token_vector rules kappa_vars alg_vars observables (pert,rule_pert) counter !ptr_env 
-	in
+			Debug.tag (Printf.sprintf "\t -Renormalizing rule rates according to the volume of '%s' (= %E v.u)" (Environment.volume_of_num volume_num env) (Environment.size_of_volume volume_num env)) ;
+			State.initialize sg token_vector diffusion_rules kappa_vars alg_vars observables (pert,rule_pert) counter !ptr_env 
+		in
 		ptr_env := new_env ;
-	let state =  
-		if !ptr_env.Environment.has_intra then
-			begin
-				Debug.tag ("\t -Counting initial non local patterns in volume '"^(Environment.volume_of_num !vol_id !ptr_env)^"'...") ;
-				NonLocal.initialize_embeddings state counter !ptr_env
-			end
-		else state
+		let state =  
+  		if !ptr_env.Environment.has_intra then
+  			begin
+  				Debug.tag ("\t -Counting initial non local patterns in volume '"^(Environment.volume_of_num !vol_id !ptr_env)^"'...") ;
+  				NonLocal.initialize_embeddings state counter !ptr_env
+  			end
+  		else state
 		in
 		ptr_state_map := IntMap.add !vol_id state !ptr_state_map ;
 		vol_id := !vol_id+1 
 		end
 	done ;
-	(Debug.tag "\t Done"; (!ptr_env, !ptr_state_map))
+	(Debug.tag "\t Done"; (!ptr_env, !ptr_state_map,vol_map))
