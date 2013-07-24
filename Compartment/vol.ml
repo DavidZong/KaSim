@@ -269,7 +269,7 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
   										let c = random vol_num in
   										if (Oo.id c) = (Oo.id self) then raise Not_found 
   										else c
-										with Not_found -> raise (Null_event 10)
+										with Not_found -> raise (Null_event 2)
 								in
 																
 								let counter = self#getCounter in

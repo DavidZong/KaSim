@@ -61,6 +61,7 @@ let elect_leader sched =
 		let comp_hp = IntMap.find vol_num sched.compartments in
 		CompHeap.fold
 		(fun vol_id c_id leader_opt ->
+			Debug.tag (Printf.sprintf "Checking next event of volume %s_%d" (Environment.volume_of_num vol_num env) vol_id) ;
 			let event = c_id#getNextEvent env 
 			in
 				upd_leader leader_opt (vol_num,vol_id) event
@@ -123,7 +124,12 @@ let step sched =
   							let hp = Vol.CompHeap.alloc comp hp in
   							if !Parameter.debugModeOn then Debug.tag (Printf.sprintf "New compartment %s was added!" (comp#getHumanName sched.environment)) ;
   							
-								{sched with compartments = IntMap.add comp#getName hp sched.compartments}
+								{sched with 
+									compartments = IntMap.add comp#getName hp sched.compartments ;
+									reactive_comp = (*adding new compartment hp location if compartment is reactive*)
+										if (Environment.control_of_volume comp#getName env) = 0 then IntSet.add comp#getName sched.reactive_comp 
+										else sched.reactive_comp
+								}
   						| None -> sched
 					in
       		sched.clock.Counter.time <- event.trigger_time ; 
