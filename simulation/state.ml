@@ -21,6 +21,7 @@ type implicit_state =
 		mutable activity_tree : Random_tree.tree; 
 		wake_up : Precondition.t ;
 		flux : (int,float IntMap.t) Hashtbl.t ;
+		vol_number : Mods.Num.t IntMap.t ; 
 		mutable silenced : IntSet.t (*Set of rule ids such that eval-activity was overestimated and whose activity was manually set to a lower value*) 
 	}
 and component_injections = (InjectionHeap.t option) array
@@ -413,7 +414,7 @@ let dot_of_influence_map desc state env =
 	) state.influence_map ;
 	Printf.fprintf desc "}\n"
 
-let initialize sg token_vector rules kappa_vars alg_vars obs (pert,rule_pert) counter env =
+let initialize sg token_vector rules kappa_vars alg_vars obs (pert,rule_pert) counter env vol_number =
 	let dim_pure_rule = max (List.length rules) 1
 	in
 	let dim_rule = dim_pure_rule + (List.length rule_pert) 
@@ -485,7 +486,8 @@ let initialize sg token_vector rules kappa_vars alg_vars obs (pert,rule_pert) co
 			influence_map = influence_table ;
 			wake_up = wake_up_table;
 			flux = if !Parameter.fluxModeOn then Hashtbl.create 5 else Hashtbl.create 0 ;
-			silenced = IntSet.empty
+			silenced = IntSet.empty ;
+			vol_number = vol_number
 		}
 	in
 	
@@ -853,12 +855,15 @@ let update_dep state cause dep_in pert_ids counter env =
   				end;
   				iter env (DepSet.union (DepSet.remove dep_in dep_to_check) depset) pert_ids
   			| Mods.RULE r_id -> (*rule activity is changed -by a perturbation if used as initial dep_in argument*)
-  				(update_activity state cause r_id counter env; 
-  				let depset = Environment.get_dependencies (Mods.RULE r_id) env
-  				in
-  				if !Parameter.debugModeOn then if !Parameter.debugModeOn then Debug.tag (Printf.sprintf "Rule %d is changed, updating %s" r_id (string_of_set Mods.string_of_dep DepSet.fold depset)) ;
-  				iter env (DepSet.union (DepSet.remove dep_in dep_to_check) depset) pert_ids
-  				)
+  				if Hashtbl.mem state.rules r_id then
+  					(update_activity state cause r_id counter env; 
+    				let depset = Environment.get_dependencies (Mods.RULE r_id) env
+    				in
+    				if !Parameter.debugModeOn then if !Parameter.debugModeOn then Debug.tag (Printf.sprintf "Rule %d is changed, updating %s" r_id (string_of_set Mods.string_of_dep DepSet.fold depset)) ;
+    				iter env (DepSet.union (DepSet.remove dep_in dep_to_check) depset) pert_ids
+    				)
+					else (*rule does not apply in given compartment*)
+						iter env (DepSet.remove dep_in dep_to_check) pert_ids
   			| Mods.PERT p_id -> 
   				if IntMap.mem p_id state.perturbations then (*pertubation p_id is still alive and should be tried*)
   					iter env (DepSet.remove dep_in dep_to_check) (IntSet.add p_id pert_ids)
@@ -1034,35 +1039,6 @@ let positive_update ?(with_tracked=[]) state r ((phi: int IntMap.t),psi) side_mo
 						(env,state, pert_ids, already_done_map, new_injs,tracked)
 			) (env,state, pert_ids, already_done_map, new_injs,tracked) map_list
 		) vars_to_wake_up (env, state, IntSet.empty, IntMap.empty,[],with_tracked)  
-	in
-	
-	(*updating tokens if rule is hybrid*)
-	
-	let env,pert_ids =
-		List.fold_left
-		(fun (env,pert_ids) (v,t_id) ->
-			let value = Num.float_of_num (value state ~var:v (-1) counter env) in
-			try
-				if !Parameter.debugModeOn then
-					(Debug.tag (Printf.sprintf "adding %f to token %d" value t_id)) ;
-				state.token_vector.(t_id) <- state.token_vector.(t_id) +. value ;
-				(*updating rule activities that depend on |t_id|*)
-				update_dep state r.r_id (Mods.TOK t_id) pert_ids counter env
-			with Invalid_argument _ -> failwith "State.positive_update: invalid token id"  
-		) (env,pert_ids) r.Dynamics.add_token 
-	in
-	let env,pert_ids = 
-		List.fold_left
-		(fun (env,pert_ids) (v,t_id) ->
-			let value = Num.float_of_num (value state ~var:v (-1) counter env) in
-			try
-				if !Parameter.debugModeOn then
-					(Debug.tag (Printf.sprintf "removing %f to token %d" value t_id)) ;
-				
-				state.token_vector.(t_id) <- state.token_vector.(t_id) -. value ;
-				update_dep state r.r_id (Mods.TOK t_id) pert_ids counter env
-			with Invalid_argument _ -> failwith "State.positive_update: invalid token id"  
-		) (env,pert_ids) r.Dynamics.rm_token
 	in
 	
 	(*Checking if any side effect needs to be checked*)
@@ -1557,4 +1533,40 @@ let dot_of_flux desc state  env =
 	print_flux state.flux true;
 	Printf.fprintf desc "}\n" ;
 	close_out desc
+	
+let update_token positive state r pert_ids counter env = 
+(*updating tokens if rule is hybrid*)
+	if positive then
+		begin
+    	let env,pert_ids =
+    		List.fold_left
+    		(fun (env,pert_ids) (v,t_id) ->
+    			let value = Num.float_of_num (value state ~var:v (-1) counter env) in
+    			try
+    				if !Parameter.debugModeOn then
+    					(Debug.tag (Printf.sprintf "adding %f to token %d" value t_id)) ;
+    				state.token_vector.(t_id) <- state.token_vector.(t_id) +. value ;
+    				(*updating rule activities that depend on |t_id|*)
+    				update_dep state r.r_id (Mods.TOK t_id) pert_ids counter env
+    			with Invalid_argument _ -> failwith "State.positive_update: invalid token id"  
+    		) (env,pert_ids) r.Dynamics.add_token 
+    	in
+			(env,pert_ids)
+		end
+	else
+  	let env,pert_ids = 
+  		List.fold_left
+  		(fun (env,pert_ids) (v,t_id) ->
+  			let value = Num.float_of_num (value state ~var:v (-1) counter env) in
+  			try
+  				if !Parameter.debugModeOn then
+  					(Debug.tag (Printf.sprintf "removing %f to token %d" value t_id)) ;
+  				
+  				state.token_vector.(t_id) <- state.token_vector.(t_id) -. value ;
+  				update_dep state r.r_id (Mods.TOK t_id) pert_ids counter env
+  			with Invalid_argument _ -> failwith "State.positive_update: invalid token id"  
+  		) (env,pert_ids) r.Dynamics.rm_token
+  	in
+		(env,pert_ids)
+
 

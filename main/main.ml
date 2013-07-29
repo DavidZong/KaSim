@@ -182,21 +182,27 @@ let main =
   		);
 			
   		print_newline() ;
-  		let scd = !scd in
-			let counter = scd.Scheduler.clock in
-  		Printf.printf "Simulation ended (eff.: %f, detail below)\n" 
-  		((float_of_int (Counter.event counter)) /. (float_of_int (Counter.null_event counter + Counter.event counter))) ;
-  		Array.iteri (fun i n ->
-  			match i with
-  				| 0 -> (Printf.printf "\tValid embedding but no longer unary when required: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
-  				| 1 -> (Printf.printf "\tValid embedding but not binary when required: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
-  				| 2 -> (Printf.printf "\tClashing instance: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
-  				| 3 -> (Printf.printf "\tLazy negative update: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
-  				| 4 -> (Printf.printf "\tLazy negative update of non local instances: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
-  				| 5 -> (Printf.printf "\tPerturbation interrupting time advance: %f\n" ((float_of_int n) /. (float_of_int (Counter.null_event counter))))
-  				|	_ -> print_string "\tna\n"
-  		) counter.Counter.stat_null ;
-  		if !Parameter.fluxModeOn then 
+  		let counter = !scd.Scheduler.clock in
+  		Printf.printf "Simulation ended at %f t.u\n" counter.Counter.time ;
+  		(*IntMap.iter
+			(fun vol_num hp ->
+				Vol.CompHeap.iteri
+				(fun vol_id comp ->
+					Printf.printf "In volume %s_%d (#%d):\n" (Environment.volume_of_num vol_num env) vol_id (Oo.id comp) ;
+					let vol_counter = comp#getCounter in
+    			Array.iteri (fun i n ->
+      			match i with
+      				| 0 -> Printf.printf "\tValid embedding but no longer unary when required: %d\n" n
+      				| 1 -> Printf.printf "\tValid embedding but not binary when required: %d\n" n
+      				| 2 -> Printf.printf "\tClashing instance: %d\n" n
+      				| 3 -> Printf.printf "\tLazy negative update: %d\n" n
+      				| 4 -> Printf.printf "\tLazy negative update of non local instances: %d\n" n
+      				| 5 -> Printf.printf "\tPerturbation interrupting time advance: %d\n" n
+							| _ -> print_string "\tna\n"
+      		) vol_counter.Counter.stat_null
+				) hp
+			) !scd.Scheduler.compartments ;
+  		*)if !Parameter.fluxModeOn then 
   			begin
   				let d = open_out !Parameter.fluxFileName in
   				State.dot_of_flux d top_state env ;

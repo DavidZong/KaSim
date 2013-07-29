@@ -14,7 +14,7 @@ let eval_pre_pert pert state counter env =
 			| BCONST b -> (None,b)
 			| BVAR b_fun -> 
 				let act_of_id = (fun id -> (instance_number id state env)) (*act_of_id:functional argument*)
-				and v_of_id = (fun id -> State.value state id counter env)
+				and v_of_id = try (fun id -> State.value state id counter env) with Not_found -> failwith "External.eval_pre: Invalid variable id"
 				and v_of_token id = 
 					let x = try state.token_vector.(id) with _ -> failwith "External.eval_pre: Invalid token id"
 					in Num.F x
@@ -41,7 +41,9 @@ let eval_pexpr pexpr state counter env =
 			match ast with
 				| Ast.Str_pexpr (str,p) -> str::cont
 				| Ast.Alg_pexpr alg -> 
-					let (x, is_constant, opt_v, dep, str) = Eval.partial_eval_alg env alg in
+					let (x, is_constant, opt_v, dep, str) = 
+						try Eval.partial_eval_alg env alg with Not_found -> failwith "External.eval_pexpr: Invalid variable id"
+					in
 					let v =
 							if is_constant
 							then (match opt_v with Some v -> Dynamics.CONST v | None -> invalid_arg "Eval.effects_of_modif")
@@ -156,11 +158,16 @@ let trigger_effect state env pert_ids tracked pert_events pert p_id eff eval_var
 						)
 				in
 				let value = State.value state ~var:v (-1) counter env in (*Change here if one wants to have address passing style of assignation*)
-				let r = State.rule_of_id id state in
-  			Hashtbl.replace state.rules id {r with k_def = Dynamics.CONST value} ;
-  			State.update_activity state p_id id counter env ;		
-  			let env,pert_ids = State.update_dep state (-1) (RULE id) pert_ids counter env in
-  			(env,state ,pert_ids,tracked,pert_events)
+				let r_opt = try Some (State.rule_of_id id state) with Not_found -> None (*rule is not active in given compartment*)
+				in
+				(match r_opt with
+				| None -> (env,state ,pert_ids,tracked,pert_events)
+				| Some r ->
+    			Hashtbl.replace state.rules id {r with k_def = Dynamics.CONST value} ;
+    			State.update_activity state p_id id counter env ;		
+    			let env,pert_ids = State.update_dep state (-1) (RULE id) pert_ids counter env in
+    			(env,state ,pert_ids,tracked,pert_events)
+				)
 			| (None,UPDATE_VAR (id,v)) ->
 				let _ =
 					if !Parameter.debugModeOn then 

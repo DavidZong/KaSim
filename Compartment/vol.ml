@@ -31,6 +31,9 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 	method getLocalTime = 
 		let c = self#getCounter in
 		c.Counter.time
+	method setLocalTime t = 
+		let c = self#getCounter in
+		c.Counter.time <- t
 	
 	val mutable compState:State.implicit_state = new_state
 	val mutable compCounter:Counter.t = new_counter
@@ -42,7 +45,6 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 	method getState = compState
 	method private setState s = compState <- s
 	method getCounter = compCounter
-	(*method private setCounter c = compCounter <- c*)
 	
 	val mutable event_buffer:event option = None
 	method getEvent = event_buffer
@@ -135,6 +137,11 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
     		State.positive_update state r (State.map_of embedding_t,psi) side_effect counter env
     	in
     	
+			let pert_ids = IntSet.union pert_ids' pert_ids in
+			
+			(*removing token from state if rule is hybrid*)
+			let env,pert_ids = State.update_token false state r pert_ids counter env 
+			in		
     	(*Non local positive update: adding new possible intras*)
     	let state = 
     		if env.Environment.has_intra then 
@@ -179,14 +186,14 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
     		else 
     			(story_profiling,event_list)
     	in
-      (state,(story_profiling,event_list),env,IntSet.union pert_ids pert_ids',psi)
+      (state,(story_profiling,event_list),env,pert_ids,psi)
 		in  
 
 		let inc env new_clock =
-			let counter = self#getCounter in
-			let dt = new_clock -. Counter.time counter in
-			counter.Counter.time <- new_clock ;
-  		Plot.fill self#getState counter plot env dt ; (*updating plot*) 
+			let dt = new_clock -. Counter.time self#getCounter in
+			self#setLocalTime new_clock ;
+			(*Debug.tag (Printf.sprintf "dt=%f" dt) ;*)
+  		Plot.fill self#getState self#getCounter plot env dt ; (*updating plot*) 
   		Counter.inc_events self#getCounter ; (*incrementing event counter*) 
   		self#emptyBuffer ()  (*emptying buffer*)
 		in
@@ -267,15 +274,16 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 									else
 										try
   										let c = random vol_num in
+											(*Debug.tag (Printf.sprintf "vol %d,%d" c#getId (Oo.id c)) ; *)
   										if (Oo.id c) = (Oo.id self) then raise Not_found 
   										else c
 										with Not_found -> raise (Null_event 2)
 								in
-																
+																								
 								let counter = self#getCounter in
 								if components = [] then 
 									c_out#setBuffer {trigger_time=infinity ; kind=Nothing} 
-								else	
+								else		
 									c_out#setBuffer {trigger_time=Counter.time counter ; kind=Inbound (components,r)} ;
 								
 								let new_comp = if is_new then Some c_out else None in
@@ -297,7 +305,10 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
     					try
 								let state,causal',env,pert_ids,_ = 
 									apply_and_update self#getState r embedding self#getCounter causal env 
-								in 
+								in
+								(*adding tokens if rule is hybrid*) 
+								let env,pert_ids = State.update_token true state r pert_ids self#getCounter env
+								in
       					self#setCausal causal' ;
 								self#setState state ;
 								compCounter.Counter.cons_null_events <- 0 ;
@@ -358,6 +369,11 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 						self#setState state ;
 						let pert_ids = IntMap.fold (fun id _ set -> IntSet.add id set) state.State.perturbations IntSet.empty
 						in
+						
+						(*checking for incoming tokens*)
+						let env,pert_ids = State.update_token true self#getState r pert_ids self#getCounter env
+						in
+		
 						(env,pert_ids,None)
 		in
 		

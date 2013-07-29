@@ -3,7 +3,7 @@
 
 %token EOF NEWLINE SEMICOLON CAR
 %token AT  COMMA DOT TYPE_TOK LAR OP_CUR CL_CUR 
-%token <Tools.pos> OP_PAR CL_PAR LOG PLUS MULT MINUS AND OR GREATER SMALLER EQUAL PERT INTRO DELETE DO SET UNTIL TRUE FALSE OBS KAPPA_RAR TRACK CPUTIME CONFIG REPEAT DIFF
+%token <Tools.pos> OP_PAR CL_PAR LOG PLUS MULT MINUS AND OR GREATER SMALLER EQUAL PERT INTRO DELETE DO UNTIL TRUE FALSE OBS KAPPA_RAR TRACK CPUTIME CONFIG REPEAT DIFF
 %token <Tools.pos> KAPPA_WLD KAPPA_SEMI SIGNATURE INFINITY TIME EVENT NULL_EVENT PROD_EVENT INIT LET DIV PLOT SINUS COSINUS TAN SQRT EXPONENT POW ABS MODULO 
 %token <Tools.pos> EMAX TMAX FLUX ASSIGN ASSIGN2 TOKEN KAPPA_LNK PIPE KAPPA_LRAR PRINT PRINTF VOLUME 
 %token <int*Tools.pos> INT 
@@ -59,14 +59,14 @@ start_rule:
 				| Ast.OBS var -> (*for backward compatibility, shortcut for %var + %plot*)
 					let expr =
 						match var with
-							| Ast.VAR_KAPPA (_,lab) -> Ast.OBS_VAR lab 
+							| Ast.VAR_KAPPA (_,lab,_) -> Ast.OBS_VAR lab 
 							| Ast.VAR_ALG (_,lab) -> Ast.OBS_VAR lab
 					in					 
 					(Ast.result := {!Ast.result with Ast.variables = var::!Ast.result.Ast.variables ; Ast.observables = expr::!Ast.result.Ast.observables})
 				| Ast.PLOT expr ->
 					(Ast.result := {!Ast.result with Ast.observables = expr::!Ast.result.Ast.observables})
-				| Ast.PERT (pre,effect,pos,opt) ->
-					(Ast.result := {!Ast.result with Ast.perturbations = (pre,effect,pos,opt)::!Ast.result.Ast.perturbations})
+				| Ast.PERT (pre,vol_opt,effect,pos,opt) ->
+					(Ast.result := {!Ast.result with Ast.perturbations = (pre,vol_opt,effect,pos,opt)::!Ast.result.Ast.perturbations})
 				| Ast.CONFIG (param_name,value_list) ->
 					(Ast.result := {!Ast.result with Ast.configurations = (param_name,value_list)::!Ast.result.Ast.configurations})
 		end ; $2 
@@ -103,9 +103,9 @@ instruction:
 	{Ast.PLOT $2}
 | PLOT error 
 	{raise (ExceptionDefn.Syntax_Error (Some $1,"Malformed plot instruction, I was expecting an algebraic expression of variables"))}
-| PERT perturbation_declaration {let (bool_expr,mod_expr_list,pos) = $2 in Ast.PERT (bool_expr,mod_expr_list,pos,None)}
+| PERT perturbation_declaration {let ((bool_expr,vol_opt),mod_expr_list,pos) = $2 in Ast.PERT (bool_expr,vol_opt,mod_expr_list,pos,None)}
 | PERT REPEAT perturbation_declaration UNTIL bool_expr 
-	{let (bool_expr,mod_expr_list,pos) = $3 in 
+	{let ((bool_expr,vol_opt),mod_expr_list,pos) = $3 in 
 	 if List.exists 
 		(fun effect -> 
 			match effect with 
@@ -113,12 +113,9 @@ instruction:
 				| _ -> false
 		) mod_expr_list
 	 then (ExceptionDefn.warning ~with_pos:$1 "Perturbation need not be applied repeatedly") ;
-	Ast.PERT (bool_expr,mod_expr_list,pos,Some $5)}
+	Ast.PERT (bool_expr,vol_opt,mod_expr_list,pos,Some $5)}
 | CONFIG STRING value_list 
 	{Ast.CONFIG ($2,$3)} 
-| PERT bool_expr DO effect_list UNTIL bool_expr /*for backward compatibility*/
-	{ExceptionDefn.warning ~with_pos:$1 "Deprecated perturbation syntax: use the 'repeat ... until' construction" ; 
-	Ast.PERT ($2,$4,$1,Some $6)}
 ;
 
 init_declaration:
@@ -148,8 +145,12 @@ value_list:
 
 perturbation_declaration:
 | OP_PAR perturbation_declaration CL_PAR {$2}
-| bool_expr DO effect_list {($1,$3,$2)}
-| bool_expr SET effect_list {ExceptionDefn.warning ~with_pos:$2 "Deprecated perturbation syntax: 'set' keyword is replaced by 'do'" ; ($1,$3,$2)} /*For backward compatibility*/
+| precondition_expr DO effect_list {($1,$3,$2)}
+;
+
+precondition_expr:
+| bool_expr {($1,None)}
+| ID OP_PAR bool_expr CL_PAR {($3,Some $1)}
 ;
 
 effect_list:
@@ -218,7 +219,7 @@ boolean:
 ;
 
 variable_declaration:
-| LABEL non_empty_mixture {Ast.VAR_KAPPA ($2,$1)}
+| LABEL non_empty_mixture diffusion_option {Ast.VAR_KAPPA ($2,$1,$3)}
 | LABEL alg_expr {Ast.VAR_ALG ($2,$1)}
 | LABEL error 
 	{let str,pos = $1 in

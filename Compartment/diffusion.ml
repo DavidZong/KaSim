@@ -21,6 +21,13 @@ let compile r ((diff_lhs,param_loc),(diff_rhs,param_loc')) env =
 				(r := IntSet.add i !r ; a := IntSet.add i !a)
   		with _ -> r := IntSet.add i !r
   	) diff_lhs ;
+		Array.iteri 
+  	(fun i vol_num -> 
+  		try 
+				if diff_lhs.(i) = vol_num then () 
+				else a := IntSet.add i !r 
+  		with _ -> a := IntSet.add i !r
+  	) diff_rhs ;
 		(!p,!a,!r)
 	in
 	 

@@ -84,7 +84,7 @@ let flip (rule_label,rule) =
 	({rule_label with lbl_nme=lbl},rule)
 		
 
-type perturbation = bool_expr * (modif_expr list) * Tools.pos * bool_expr option
+type perturbation = bool_expr * (str_pos option) * (modif_expr list) * Tools.pos * bool_expr option
 and modif_expr = 
 	| INTRO of (alg_expr * mixture * Tools.pos) 
 	| DELETE of (alg_expr * mixture * Tools.pos) 
@@ -117,7 +117,7 @@ and init_t =
 	| INIT_MIX of  alg_expr * mixture 
 	| INIT_TOK of  alg_expr * str_pos 
 and variable = 
-	| VAR_KAPPA of mixture * str_pos 
+	| VAR_KAPPA of mixture * str_pos * (diffusion_param option)  
 	| VAR_ALG of alg_expr * str_pos 
 	
 type compil = {variables : variable list; (*pattern declaration for reusing as variable in perturbations or kinetic rate*)

@@ -28,6 +28,7 @@ let c_of_id (n,id) sched =
 
 let random num sched = 
 	let hp = IntMap.find num sched.compartments in
+	Debug.tag (Printf.sprintf "size: %d compartment type: %d" (Vol.CompHeap.size hp) num) ;
 	CompHeap.random hp 
 
 let create comp_map vol_map env =
@@ -50,7 +51,7 @@ let elect_leader sched =
 	
 	let upd_leader leader_opt (vol_num,vol_id) event = 
 		match leader_opt with
-		| None -> Some (vol_num,vol_id,event)
+		| None -> if event.trigger_time < infinity then Some (vol_num,vol_id,event) else None
 		| Some (_,_,event') -> 
 			if event.trigger_time < event'.trigger_time then Some (vol_num,vol_id,event) 
 			else leader_opt
@@ -61,7 +62,6 @@ let elect_leader sched =
 		let comp_hp = IntMap.find vol_num sched.compartments in
 		CompHeap.fold
 		(fun vol_id c_id leader_opt ->
-			Debug.tag (Printf.sprintf "Checking next event of volume %s_%d" (Environment.volume_of_num vol_num env) vol_id) ;
 			let event = c_id#getNextEvent env 
 			in
 				upd_leader leader_opt (vol_num,vol_id) event
@@ -77,6 +77,7 @@ let dump sched =
 			(fun vol_id c ->
 				let next_event = c#getEvent in
 				let time = match next_event with None -> "n.a" | Some e -> string_of_float e.trigger_time in
+				Debug.tag "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@" ;
 				Debug.tag (Printf.sprintf 
 				"<VOLUME %s_%d (next event will occur at %s t.u)>" vol_nme vol_id time
 				) ;
@@ -87,6 +88,11 @@ let dump sched =
 	
 
 let step sched =
+	if !Parameter.debugModeOn then (
+		Debug.tag "------------------------------" ;
+		Debug.tag "------------------------------" ;
+		Debug.tag (Printf.sprintf "GLOBAL CLOCK: %f t.u (%d)" (Counter.time sched.clock) (Counter.event sched.clock)) 
+		) ;
 	let e_clock = sched.clock.Counter.events in 
 	let max_time = match sched.clock.Counter.max_time with None -> infinity | Some t -> t
 	in
@@ -104,16 +110,22 @@ let step sched =
 					if !Parameter.debugModeOn then 
       			begin
       				dump sched ;
-      				Debug.tag (Printf.sprintf "[[Next reaction is in volume %s_%d]]" 
-      				(Environment.volume_of_num vol_num sched.environment) vol_id) ;
+      				Debug.tag (Printf.sprintf "[[Next reaction is in volume %s_%d at %f t.u]]" 
+      				(Environment.volume_of_num vol_num sched.environment) vol_id event.trigger_time) ;
       			end ;
       		(*************************************************************************)
 					
 					let new_state vol_num counter env =
 						let (rules,observables,kappa_vars,alg_vars,pert,rule_pert) = IntMap.find vol_num sched.vol_map 
 						in
-						State.initialize (Graph.SiteGraph.init 0) [||] rules kappa_vars alg_vars observables (pert,rule_pert) counter env 
+						let tk_vect = 
+							let top_comp = try Vol.CompHeap.find 0 (IntMap.find 0 sched.compartments) with Not_found -> failwith "Scheduler.react: top compartment is absent"
+							in
+							Array.map (fun _ -> 0.0) (top_comp#getState).State.token_vector
+						in	
+						State.initialize (Graph.SiteGraph.init 0) tk_vect rules kappa_vars alg_vars observables (pert,rule_pert) counter env IntMap.empty 
 					in
+					
 					let env,new_comp = c#react (fun num -> random num sched) new_state sched.environment 
       	  in
 					let sched = 
@@ -124,6 +136,8 @@ let step sched =
   							let hp = Vol.CompHeap.alloc comp hp in
   							if !Parameter.debugModeOn then Debug.tag (Printf.sprintf "New compartment %s was added!" (comp#getHumanName sched.environment)) ;
   							
+								let sched = update_top_state sched comp#getName in
+								
 								{sched with 
 									compartments = IntMap.add comp#getName hp sched.compartments ;
 									reactive_comp = (*adding new compartment hp location if compartment is reactive*)
@@ -132,7 +146,7 @@ let step sched =
 								}
   						| None -> sched
 					in
-      		sched.clock.Counter.time <- event.trigger_time ; 
+					sched.clock.Counter.time <- event.trigger_time ; 
 					Counter.inc_events sched.clock ; 
       		{sched with environment = env }
 		
