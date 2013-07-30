@@ -22,7 +22,7 @@ val agent_of_id : int -> t -> agent
 val name : agent -> int
 
 (**The empty mixture*)
-val empty : int option -> int option -> t
+val empty : int option -> t
 val is_empty : t -> bool
 
 (**Whether mixture's cc's should be embedded in a connected graph*)
@@ -74,6 +74,3 @@ val internal_edges : int -> t -> (int*int) Mods.Int2Map.t
 
 (**for debugging*)
 val dump_span : (*Environment.t ->*) t -> unit
-
-(**Returns [Some i] if the mixture [m] is located in volume [i]*)
-val location : t -> int option

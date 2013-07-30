@@ -43,7 +43,7 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
 		counter.Counter.time <- t
 			
 	method getState = compState
-	method private setState s = compState <- s
+	method setState s = compState <- s
 	method getCounter = compCounter
 	
 	val mutable event_buffer:event option = None
@@ -279,7 +279,17 @@ class compartment vol_num new_volume new_state new_counter new_causal new_plot =
   										else c
 										with Not_found -> raise (Null_event 2)
 								in
-																								
+								let env,pert_ids = (*updating compartment number*)
+									if not is_new then (env,pert_ids)
+									else
+										begin
+  										let tk_id = Environment.num_of_token (Environment.volume_of_num (c_out#getName) env) env in
+  										(self#getState).State.token_vector.(tk_id) <- (self#getState).State.token_vector.(tk_id) +. 1. ;
+    									State.update_dep state r.Dynamics.r_id (Mods.TOK tk_id) pert_ids self#getCounter env 
+										end
+								in		 																
+								
+								
 								let counter = self#getCounter in
 								if components = [] then 
 									c_out#setBuffer {trigger_time=infinity ; kind=Nothing} 

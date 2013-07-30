@@ -471,7 +471,7 @@ let rec partial_eval_bool env ast =
 		| DIFF (ast, ast', pos) ->
 				bin_op_alg ast ast' pos (fun v v' -> not (Num.is_equal v v')) "<>"
 
-let mixture_of_ast ?(tolerate_new_state=false) mix_id_opt loc_opt is_pattern env ast_mix =
+let mixture_of_ast ?(tolerate_new_state=false) mix_id_opt is_pattern env ast_mix =
 	let rec eval_mixture env ast_mix ctxt mixture =
 		match ast_mix with
 		| Ast.COMMA (a, ast_mix) ->
@@ -490,7 +490,7 @@ let mixture_of_ast ?(tolerate_new_state=false) mix_id_opt loc_opt is_pattern env
 	in
 	
 	let ctxt = { pairing = IntMap.empty; curr_id = 0; new_edges = Int2Map.empty; } in
-	let (ctxt, mix, env) = eval_mixture env ast_mix ctxt (Mixture.empty mix_id_opt loc_opt)
+	let (ctxt, mix, env) = eval_mixture env ast_mix ctxt (Mixture.empty mix_id_opt)
 	in
 	begin
 		IntMap.iter (*checking that all edge identifiers are pairwise defined*)
@@ -559,10 +559,10 @@ let rule_of_ast ?(backwards=false) env (ast_rule_label, ast_rule) tolerate_new_s
 					(env,(Some (CONST v)), dep)
 				else (env,(Some (VAR rate)), dep)
 	in
-	let lhs,env = mixture_of_ast (Some lhs_id) None true env ast_rule.lhs
+	let lhs,env = mixture_of_ast (Some lhs_id) true env ast_rule.lhs
 	in 
 	let lhs = match k_alt with None -> lhs | Some _ -> Mixture.set_unary lhs in
-	let rhs,env = mixture_of_ast ~tolerate_new_state:tolerate_new_state None None true env ast_rule.rhs in
+	let rhs,env = mixture_of_ast ~tolerate_new_state:tolerate_new_state None true env ast_rule.rhs in
 	let (script, balance,added,modif_sites(*,side_effects*)) = Dynamics.diff ast_rule.rule_pos lhs rhs ast_rule_label.lbl_nme env
 	
 	and kappa_lhs = Mixture.to_kappa false lhs env
@@ -774,19 +774,10 @@ let variables_of_result env res =
 	List.fold_left
 		(fun (env, mixtures, vars) var ->
 					match var with
-						| Ast.VAR_KAPPA (ast, label_pos, diffusion_option) ->
-								let loc_opt =
-									match diffusion_option with
-									| Some (Ast.DIFF_LOC [(nme,pos),Some _]) -> 
-										let vol_num = 
-											try Environment.num_of_volume nme env with Not_found -> raise (ExceptionDefn.Semantics_Error (pos,"Undeclared compartment "^nme))
-										in
-										Some vol_num
-									| _ -> let _,pos = label_pos in raise (ExceptionDefn.Semantics_Error (pos,"Invalid context for kappa variable, I was expecting something like {V(*)}"))
-								in
+						| Ast.VAR_KAPPA (ast, label_pos) ->
 								let (env, id) =
 									Environment.declare_var_kappa (Some label_pos) env in
-								let mix,env = mixture_of_ast (Some id) loc_opt is_pattern env ast
+								let mix,env = mixture_of_ast (Some id) is_pattern env ast
 								in (env, (mix :: mixtures), vars)
 						| Ast.VAR_ALG (ast, label_pos) ->
 								let (f, constant, value_opt, dep, lbl) = partial_eval_alg env ast in
@@ -847,7 +838,7 @@ let effects_of_modif variables env ast_list =
 					match ast with
 					| INTRO (alg_expr, ast_mix, pos) ->
 							let (x, is_constant, opt_v, dep, str) = partial_eval_alg env alg_expr in
-							let m,env = mixture_of_ast None None false env ast_mix in
+							let m,env = mixture_of_ast None false env ast_mix in
 							let v =
 								if is_constant
 								then (match opt_v with Some v -> Dynamics.CONST v | None -> invalid_arg "Eval.effects_of_modif") 
@@ -862,7 +853,7 @@ let effects_of_modif variables env ast_list =
 							let (env, id) =
 								Environment.declare_var_kappa (Some (nme_pert,pos)) env 
 							in
-							let m,env = mixture_of_ast (Some id) None true env ast_mix in
+							let m,env = mixture_of_ast (Some id) true env ast_mix in
 							let v =
 								if is_constant
 								then (match opt_v with Some v -> Dynamics.CONST v | None -> invalid_arg "Eval.effects_of_modif")
@@ -1005,7 +996,7 @@ let pert_of_result variables env res =
 								let (env, id) =
 									Environment.declare_var_kappa (Some (str_pert,pos)) env 
 								in
-								let lhs = Mixture.empty (Some id) None
+								let lhs = Mixture.empty (Some id)
 								and rhs = mix 
 								in
 								let (script,balance,added,modif_sites(*,side_effect*)) = Dynamics.diff pos lhs rhs (Some (str_pert,pos)) env
@@ -1050,7 +1041,7 @@ let pert_of_result variables env res =
 						| Dynamics.DELETE (_,mix) ->
 							begin
 								let lhs = mix
-								and rhs = Mixture.empty None None
+								and rhs = Mixture.empty None
 								in
 								let (script,balance,added,modif_sites(*,side_effect*)) = Dynamics.diff pos lhs rhs (Some (str_pert,pos)) env
 								and kappa_lhs = Mixture.to_kappa false lhs env
@@ -1365,16 +1356,9 @@ let initialize result counter =
   					| Some vol_num' -> (vol_num' = vol_num) 
   					| None -> vol_num=0 (*Rule with no diffusion annotation may only occur at toplevel*)
   				) rule_pert
-				and filtered_vars = 
-					List.filter (*leaving only rules which may be applied in the volume (none if sink)*)
-  				(fun mix -> 
-  					match Mixture.location mix with 
-  					| Some vol_num' -> (vol_num' = vol_num) 
-  					| None -> vol_num=0 (*obs with no diffusion annotation may only occur at toplevel*)
-  				) kappa_vars
 				in
 				let rules = Dynamics.renormalize filtered_rules (Environment.size_of_volume vol_num env) env in
-				IntMap.add vol_num (rules,observables,filtered_vars,alg_vars,filtered_pert,filtered_rule_pert) vol_map
+				IntMap.add vol_num (rules,observables,kappa_vars,alg_vars,filtered_pert,filtered_rule_pert) vol_map
 		) env.Environment.volume_of_num IntMap.empty
 	in	
 	
@@ -1394,19 +1378,24 @@ let initialize result counter =
 		let opt = try Some (IntMap.find !vol_id sg_token_map) with Not_found -> None in
 		let sg,token_vector = match opt with Some (sg,tk) -> (sg,tk) | None -> (Graph.SiteGraph.init 0,[||])
 		in
-		let vol_number = 
-			if !vol_id = 0 then (*only for top volume: counting how many sub volumes there are --sorted by name*)
-				IntMap.fold 
-				(fun vol_id _ map -> 
-					let volume_num = Environment.num_of_volume_id vol_id env in
-				 	let n = try IntMap.find volume_num map with Not_found -> Mods.Num.I 0
-					in
-					IntMap.add volume_num (Mods.Num.add n (Mods.Num.I 1)) map
-				) sg_token_map IntMap.empty 
-			else IntMap.empty
+		let token_vector = 
+			if !vol_id = 0 (*if top compartment*) then
+				begin
+  				IntMap.iter 
+  				(fun _ vol_num -> 
+						if vol_num = 0 then () 
+						else
+    					let vol_nme = Environment.volume_of_num vol_num env in
+    					let tk_id = Environment.num_of_token vol_nme env in
+    					token_vector.(tk_id) <- token_vector.(tk_id) +. 1. 
+  				) env.Environment.num_of_volume_id ; token_vector 
+				end
+			else token_vector
 		in
 		begin
-		Debug.tag ("\t -Counting initial local patterns in volume '"^(Environment.volume_of_num !vol_id !ptr_env)^"'...") ;
+		(try 
+			Debug.tag ("\t -Counting initial local patterns in volume '"^(Environment.volume_of_num (Environment.num_of_volume_id !vol_id !ptr_env) !ptr_env)^"'...") 
+		with Not_found -> failwith (string_of_int !vol_id));
 		let volume_num = Environment.num_of_volume_id !vol_id env in
 		let (state, new_env) =
 			let diffusion_rules =
@@ -1418,7 +1407,7 @@ let initialize result counter =
 			in
 			(*Dividing kinetic rate of binary rules by the volume size*)
 			Debug.tag (Printf.sprintf "\t -Renormalizing rule rates according to the volume of '%s' (= %E v.u)" (Environment.volume_of_num volume_num env) (Environment.size_of_volume volume_num env)) ;
-			State.initialize sg token_vector diffusion_rules kappa_vars alg_vars observables (pert,rule_pert) counter !ptr_env vol_number
+			State.initialize sg token_vector diffusion_rules kappa_vars alg_vars observables (pert,rule_pert) counter !ptr_env 
 		in
 		ptr_env := new_env ;
 		let state =  

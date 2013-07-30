@@ -59,7 +59,7 @@ start_rule:
 				| Ast.OBS var -> (*for backward compatibility, shortcut for %var + %plot*)
 					let expr =
 						match var with
-							| Ast.VAR_KAPPA (_,lab,_) -> Ast.OBS_VAR lab 
+							| Ast.VAR_KAPPA (_,lab) -> Ast.OBS_VAR lab 
 							| Ast.VAR_ALG (_,lab) -> Ast.OBS_VAR lab
 					in					 
 					(Ast.result := {!Ast.result with Ast.variables = var::!Ast.result.Ast.variables ; Ast.observables = expr::!Ast.result.Ast.observables})
@@ -219,7 +219,7 @@ boolean:
 ;
 
 variable_declaration:
-| LABEL non_empty_mixture diffusion_option {Ast.VAR_KAPPA ($2,$1,$3)}
+| LABEL non_empty_mixture {Ast.VAR_KAPPA ($2,$1)}
 | LABEL alg_expr {Ast.VAR_ALG ($2,$1)}
 | LABEL error 
 	{let str,pos = $1 in

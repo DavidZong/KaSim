@@ -28,7 +28,6 @@ let c_of_id (n,id) sched =
 
 let random num sched = 
 	let hp = IntMap.find num sched.compartments in
-	Debug.tag (Printf.sprintf "size: %d compartment type: %d" (Vol.CompHeap.size hp) num) ;
 	CompHeap.random hp 
 
 let create comp_map vol_map env =
@@ -123,7 +122,7 @@ let step sched =
 							in
 							Array.map (fun _ -> 0.0) (top_comp#getState).State.token_vector
 						in	
-						State.initialize (Graph.SiteGraph.init 0) tk_vect rules kappa_vars alg_vars observables (pert,rule_pert) counter env IntMap.empty 
+						State.initialize (Graph.SiteGraph.init 0) tk_vect rules kappa_vars alg_vars observables (pert,rule_pert) counter env  
 					in
 					
 					let env,new_comp = c#react (fun num -> random num sched) new_state sched.environment 
@@ -136,8 +135,6 @@ let step sched =
   							let hp = Vol.CompHeap.alloc comp hp in
   							if !Parameter.debugModeOn then Debug.tag (Printf.sprintf "New compartment %s was added!" (comp#getHumanName sched.environment)) ;
   							
-								let sched = update_top_state sched comp#getName in
-								
 								{sched with 
 									compartments = IntMap.add comp#getName hp sched.compartments ;
 									reactive_comp = (*adding new compartment hp location if compartment is reactive*)

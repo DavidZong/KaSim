@@ -21,7 +21,6 @@ type implicit_state =
 		mutable activity_tree : Random_tree.tree; 
 		wake_up : Precondition.t ;
 		flux : (int,float IntMap.t) Hashtbl.t ;
-		vol_number : Mods.Num.t IntMap.t ; 
 		mutable silenced : IntSet.t (*Set of rule ids such that eval-activity was overestimated and whose activity was manually set to a lower value*) 
 	}
 and component_injections = (InjectionHeap.t option) array
@@ -414,7 +413,7 @@ let dot_of_influence_map desc state env =
 	) state.influence_map ;
 	Printf.fprintf desc "}\n"
 
-let initialize sg token_vector rules kappa_vars alg_vars obs (pert,rule_pert) counter env vol_number =
+let initialize sg token_vector rules kappa_vars alg_vars obs (pert,rule_pert) counter env  =
 	let dim_pure_rule = max (List.length rules) 1
 	in
 	let dim_rule = dim_pure_rule + (List.length rule_pert) 
@@ -487,7 +486,6 @@ let initialize sg token_vector rules kappa_vars alg_vars obs (pert,rule_pert) co
 			wake_up = wake_up_table;
 			flux = if !Parameter.fluxModeOn then Hashtbl.create 5 else Hashtbl.create 0 ;
 			silenced = IntSet.empty ;
-			vol_number = vol_number
 		}
 	in
 	

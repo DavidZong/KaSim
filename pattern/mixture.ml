@@ -17,7 +17,6 @@ type t = {
 	size_of_cc : int array ;
 	root_of_cc : int array ;
 	unary : bool ;
-	loc : int option
 	}
 
 let graph m = m.graph 
@@ -86,7 +85,7 @@ let is_bound (a_i,s_i) mix =
 let fold_interface f ag = IntMap.fold f ag.interface 
 let create_agent name intf = {name=name ; interface = intf}
 
-let empty id_opt loc_opt = {
+let empty id_opt = {
 	agents = IntMap.empty ;
 	site_number = 0 ; 
 	graph = Int2Map.empty ;
@@ -97,12 +96,8 @@ let empty id_opt loc_opt = {
 	mix_id = id_opt ;
 	size_of_cc = Array.create 0 0 ;
 	root_of_cc = Array.create 0 0 ;
-	unary = false ;
-	loc = loc_opt
+	unary = false 
 	} 
-
-let location mixture = 
-	mixture.loc
 
 let unary mix = mix.unary
 let set_unary mix = {mix with unary = true}

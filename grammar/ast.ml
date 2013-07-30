@@ -117,7 +117,7 @@ and init_t =
 	| INIT_MIX of  alg_expr * mixture 
 	| INIT_TOK of  alg_expr * str_pos 
 and variable = 
-	| VAR_KAPPA of mixture * str_pos * (diffusion_param option)  
+	| VAR_KAPPA of mixture * str_pos   
 	| VAR_ALG of alg_expr * str_pos 
 	
 type compil = {variables : variable list; (*pattern declaration for reusing as variable in perturbations or kinetic rate*)
